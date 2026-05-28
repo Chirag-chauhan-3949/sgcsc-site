@@ -212,25 +212,20 @@
     if (!certNo) { showError('No certificate number in URL.'); return; }
 
     try {
-      // Try generic certificates first, then typing certificates
-      const urls = [
-        `/api/certificates?search=${encodeURIComponent(certNo)}`,
-        `/api/typing-certificates?search=${encodeURIComponent(certNo)}`
-      ];
-
-      let found = null;
-
-      for (const url of urls) {
-        const res  = await fetch(url);
-        if (!res.ok) continue;
-        const data = await res.json();
-        // Handle both array responses and { data: [...] } wrapped responses
-        const arr  = Array.isArray(data) ? data : (data.data || data.certificates || data.results || []);
-        if (arr.length > 0) { found = arr[0]; break; }
+      const res = await fetch('/verify/certificate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ certNo: certNo })
+      });
+      
+      if (!res.ok) {
+        showInvalid();
+        return;
       }
-
-      if (found) {
-        showValid(found);
+      
+      const data = await res.json();
+      if (data.success && data.data) {
+        showValid(data.data);
       } else {
         showInvalid();
       }
