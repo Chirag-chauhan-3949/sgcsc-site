@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'https://sgcsc-backend.onrender.com';
+const API_BASE = process.env.REACT_APP_API_URL || 'https://sgcsc-backend-dzp4.onrender.com';
 
 function fmtDate(d) {
   if (!d) return '—';
@@ -34,23 +34,17 @@ export default function CertificateVerify() {
 
     async function verify() {
       try {
-        const endpoints = [
-          `${API_BASE}/api/certificates?search=${encodeURIComponent(certNo)}`,
-          `${API_BASE}/api/typing-certificates?search=${encodeURIComponent(certNo)}`,
-        ];
+        const res = await fetch(
+          `${API_BASE}/api/public/certificate/${encodeURIComponent(certNo)}`
+        );
+        const data = await res.json();
 
-        let found = null;
-        for (const url of endpoints) {
-          const res  = await fetch(url, { credentials: 'include' });
-          if (!res.ok) continue;
-          const data = await res.json();
-          const arr  = Array.isArray(data) ? data
-                     : (data.data || data.certificates || data.results || []);
-          if (arr.length > 0) { found = arr[0]; break; }
+        if (res.ok && data.success && data.data) {
+          setCert(data.data);
+          setStatus('valid');
+        } else {
+          setStatus('invalid');
         }
-
-        if (found) { setCert(found); setStatus('valid'); }
-        else       { setStatus('invalid'); }
       } catch (err) {
         console.error('Verification error:', err);
         setStatus('error');
