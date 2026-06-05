@@ -133,34 +133,6 @@ export function FranchiseSidebar() {
           )}
         </li>
 
-        {/* Results */}
-        <li className="nav-item mb-2">
-          <button
-            type="button"
-            className="btn btn-toggle w-100 text-start d-flex justify-content-between align-items-center text-dark"
-            onClick={() => toggleMenu("results")}
-          >
-            <span className="d-flex align-items-center gap-2">
-              <i className="bi bi-clipboard-check"></i>
-              Results
-            </span>
-            <i className={`bi ${openMenu === "results" ? "bi-chevron-down" : "bi-chevron-right"}`}></i>
-          </button>
-          {openMenu === "results" && (
-            <ul className="btn-toggle-nav list-unstyled ps-4 pt-2 pb-1">
-              <li className="mb-1">
-                <NavLink to="/franchise/results/add" className={subLinkClass}>
-                  Add Result
-                </NavLink>
-              </li>
-              <li className="mb-1">
-                <NavLink to="/franchise/results" end className={subLinkClass}>
-                  View Results
-                </NavLink>
-              </li>
-            </ul>
-          )}
-        </li>
 
         {/* Certificates */}
         <li className="nav-item mb-2">

@@ -24,6 +24,8 @@ export default function FranchiseAdmitCardCreate() {
 
   const [franchiseName, setFranchiseName] = useState("");
   const [courses, setCourses] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [studentId, setStudentId] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
@@ -34,13 +36,15 @@ export default function FranchiseAdmitCardCreate() {
   useEffect(() => {
     const fetchInitial = async () => {
       try {
-        const [profileRes, coursesRes] = await Promise.all([
+        const [profileRes, coursesRes, studentsRes] = await Promise.all([
           API.get("/franchise-profile/me"),
           API.get("/franchise/courses"),
+          API.get("/franchise/students"),
         ]);
         const profile = profileRes.data?.data || profileRes.data;
         if (profile?.instituteName) setFranchiseName(profile.instituteName);
         setCourses(Array.isArray(coursesRes.data) ? coursesRes.data : []);
+        setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : []);
       } catch (err) {
         console.error("Failed to fetch initial data:", err);
       }
@@ -77,6 +81,21 @@ export default function FranchiseAdmitCardCreate() {
     };
     fetchCard();
   }, [isEditMode, cardId]);
+
+  const handleSelectStudent = (id) => {
+    if (!id) { setStudentId(""); return; }
+    const student = students.find((s) => (s._id || s.id) === id);
+    if (!student) return;
+    setStudentId(id);
+    setStudentName(student.name || "");
+    setFatherName(student.fatherName || "");
+    setMotherName(student.motherName || "");
+    setRollNumber(student.rollNumber || "");
+    setPhoto(student.photo || "");
+    if (student.courseName) setCourseName(student.courseName);
+    setEnrollmentInput(student.enrollmentNo || "");
+    setMessage("");
+  };
 
   const handleLookup = async () => {
     if (!enrollmentInput.trim()) {
@@ -192,7 +211,28 @@ export default function FranchiseAdmitCardCreate() {
           <form onSubmit={handleSubmit} className="row g-3">
             {!isEditMode && (
               <div className="col-12">
-                <label className="form-label">Student Lookup (by enrollment / roll number)</label>
+                <label className="form-label fw-semibold">Select Student</label>
+                <select
+                  className="form-select mb-2"
+                  value={studentId}
+                  onChange={(e) => handleSelectStudent(e.target.value)}
+                >
+                  <option value="">— Choose a student to auto-fill —</option>
+                  {students.map((s) => {
+                    const sid = s._id || s.id;
+                    return (
+                      <option key={sid} value={sid}>
+                        {s.name} — {s.enrollmentNo || s.rollNumber || ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+
+            {!isEditMode && (
+              <div className="col-12">
+                <label className="form-label">Or Lookup by Enrollment / Roll Number</label>
                 <div className="input-group">
                   <input
                     type="text"

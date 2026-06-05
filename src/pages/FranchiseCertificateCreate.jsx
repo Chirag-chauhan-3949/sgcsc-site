@@ -27,6 +27,8 @@ export default function FranchiseCertificateCreate() {
 
   // State management
   const [courses, setCourses] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [studentId, setStudentId] = useState("");
   const [franchiseName, setFranchiseName] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingStudent, setLoadingStudent] = useState(false);
@@ -41,12 +43,14 @@ export default function FranchiseCertificateCreate() {
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [coursesRes, profileRes] = await Promise.all([
+        const [coursesRes, profileRes, studentsRes] = await Promise.all([
           API.get("/franchise/courses"),
           API.get("/franchise-profile/me"),
+          API.get("/franchise/students"),
         ]);
         const data = Array.isArray(coursesRes.data) ? coursesRes.data : [];
         setCourses(data);
+        setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : []);
 
         const profile = profileRes.data?.data || profileRes.data;
         if (profile?.instituteName) setFranchiseName(profile.instituteName);
@@ -94,6 +98,22 @@ export default function FranchiseCertificateCreate() {
 
     fetchCertificate();
   }, [isEditMode, certificateId]);
+
+  const handleSelectStudent = (id) => {
+    if (!id) { setStudentId(""); return; }
+    const student = students.find((s) => (s._id || s.id) === id);
+    if (!student) return;
+    setStudentId(id);
+    setEnrollmentNumber(student.enrollmentNo || "");
+    setName(student.name || "");
+    setFatherName(student.fatherName || "");
+    setCourseName(student.courseName || "");
+    setPhoto(student.photo || "");
+    if (student.dob) setDob(new Date(student.dob).toISOString().split("T")[0]);
+    if (student.sessionStart) setSessionFrom(new Date(student.sessionStart).getFullYear().toString());
+    if (student.sessionEnd) setSessionTo(new Date(student.sessionEnd).getFullYear().toString());
+    setMessage("");
+  };
 
   // Lookup student by enrollment number — also captures photo URL for certificate
   const handleLookupStudent = async () => {
@@ -262,6 +282,28 @@ export default function FranchiseCertificateCreate() {
       <div className="card shadow-sm">
         <div className="card-body">
           <form onSubmit={handleSubmit} className="row g-3">
+            {!isEditMode && (
+              <div className="col-12">
+                <label className="form-label fw-semibold">Select Student</label>
+                <select
+                  className="form-select"
+                  value={studentId}
+                  onChange={(e) => handleSelectStudent(e.target.value)}
+                >
+                  <option value="">— Choose a student to auto-fill —</option>
+                  {students.map((s) => {
+                    const sid = s._id || s.id;
+                    return (
+                      <option key={sid} value={sid}>
+                        {s.name} — {s.enrollmentNo || s.rollNumber || ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                <small className="text-muted">Or enter enrollment number manually below and click Lookup</small>
+              </div>
+            )}
+
             {/* Enrollment Number */}
             <div className="col-md-6">
               <label className="form-label">
