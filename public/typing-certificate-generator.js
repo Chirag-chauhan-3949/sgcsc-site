@@ -1,23 +1,15 @@
-// ╔══════════════════════════════════════════════════════════════╗
+// ═══════════════════════════════════════════════════════════════╗
 // ║        TYPING CERTIFICATE GENERATOR — DROP-IN MODULE        ║
 // ║                                                              ║
 // ║  SETUP (do once):                                            ║
 // ║    TypingCertificateGenerator.loadTemplate('path/to/template.jpg') ║
 // ║                                                              ║
-// ║  TO CUSTOMIZE TEXT POSITIONS:                                ║
-// ║    1. Edit CONFIG.fields below with new x,y coordinates     ║
-// ║    2. Or call updateFieldPositions({fieldName: {x, y, ...}})║
-// ║    3. Coordinates are % of image width/height (0-100)       ║
-// ║                                                              ║
 // ║  GENERATE (call whenever you have student data):             ║
 // ║    TypingCertificateGenerator.download({ ...studentData })   ║
-// ║    TypingCertificateGenerator.preview({ ...studentData }) ← blob ║
+// ║    TypingCertificateGenerator.preview({ ...studentData }) ← blob  ║
+// ║    TypingCertificateGenerator.downloadAll([ ...students ])    ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-// Prevent re-declaration if already defined
-if (typeof TypingCertificateGenerator !== 'undefined') {
-  console.warn('TypingCertificateGenerator already defined, skipping re-declaration');
-} else {
 var TypingCertificateGenerator = (() => {
 
   // ─────────────────────────────────────────────
@@ -31,13 +23,18 @@ var TypingCertificateGenerator = (() => {
 
     fields: {
       // { x, y } as % of image dimensions. font is px at full resolution.
-      studentName:        { x: 50,  y: 40, font: 'bold 120px serif',      color: '#000000', align: 'center' },
-      fatherHusbandName:  { x: 30,  y: 52, font: '100px serif',          color: '#000000', align: 'left' },
-      motherName:         { x: 70,  y: 52, font: '100px serif',          color: '#000000', align: 'left' },
-      enrollmentNumber:   { x: 30,  y: 60, font: '100px serif',          color: '#000000', align: 'left' },
-      computerTyping:     { x: 70,  y: 60, font: '100px serif',          color: '#000000', align: 'left' },
-      certificateNo:      { x: 50,  y: 68, font: 'bold 100px serif',     color: '#000000', align: 'center' },
-      dateOfIssue:        { x: 50,  y: 76, font: '100px serif',          color: '#000000', align: 'center' },
+      studentName:        { x: 63, y: 52.3, font: '200px serif',     color: '#000000', align: 'center' },
+      fatherHusbandName:  { x: 32,  y: 57, font: '200px serif',       color: '#000000', align: 'left' },
+      motherName:         { x: 70,  y: 57, font: '200px serif',       color: '#000000', align: 'left' },
+      enrollmentNumber:   { x: 22.5, y: 77.5, font: '150px serif',    color: '#000000', align: 'left' },
+      computerTyping:     { x: 22.5, y: 82, font: '150px serif',      color: '#000000', align: 'left' },
+      certificateNo:      { x: 22.5, y: 86.5, font: '150px serif',     color: '#000000', align: 'left' },
+      dateOfIssue:        { x: 22.5, y: 90.7, font: '150px serif',     color: '#000000', align: 'left' },
+      sessionFrom:        { x: 74,  y: 61, font: '200px serif',       color: '#000000', align: 'left' },
+      sessionTo:          { x: 83,  y: 61, font: '200px serif',       color: '#000000', align: 'left' },
+      grade:              { x: 86,  y: 65, font: '200px serif',       color: '#000000', align: 'left' },
+      studyCentre:        { x: 37,  y: 69.4, font: '200px serif',     color: '#000000', align: 'left' },
+      wordsPerMinute:     { x: 28.5, y: 82, font: '150px serif',      color: '#000000', align: 'left' },
     }
   };
 
@@ -54,7 +51,15 @@ var TypingCertificateGenerator = (() => {
   function _initCanvas() {
     if (!_canvas) {
       _canvas = document.getElementById('typingCertCanvas');
-      if (_canvas) {
+      if (!_canvas) {
+        _canvas = document.createElement('canvas');
+        _canvas.id = 'typingCertCanvas';
+        _canvas.style.display = 'none';
+        _canvas.width = 800;
+        _canvas.height = 600;
+        document.body.appendChild(_canvas);
+      }
+      if (_canvas && !_ctx) {
         _ctx = _canvas.getContext('2d');
       }
     }
@@ -73,7 +78,7 @@ var TypingCertificateGenerator = (() => {
 
   function _pct(val, total) { return (val / 100) * total; }
 
-  // Helper to load an image from URL
+  // Helper to load an image from URL (with cache busting)
   function _loadImage(src) {
     return new Promise((resolve, reject) => {
       if (!src) {
@@ -84,7 +89,9 @@ var TypingCertificateGenerator = (() => {
       img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
       img.onerror = () => reject(new Error('Failed to load image: ' + src));
-      img.src = src;
+      // Add cache-busting to force reload when template changes
+      const separator = src.includes('?') ? '&' : '?';
+      img.src = src + separator + '_cb=' + Date.now();
     });
   }
 
@@ -92,10 +99,9 @@ var TypingCertificateGenerator = (() => {
     if (!text || !_ctx) return;
     const W = _canvas.width, H = _canvas.height;
     _ctx.save();
-    _ctx.font      = field.font;
+    _ctx.font = field.font;
     _ctx.fillStyle = field.color;
 
-    // Handle text alignment: center text should be drawn at the center point
     if (field.align === 'center') {
       _ctx.textAlign = 'center';
       _ctx.fillText(text, _pct(field.x, W), _pct(field.y, H));
@@ -103,18 +109,53 @@ var TypingCertificateGenerator = (() => {
       _ctx.textAlign = 'right';
       _ctx.fillText(text, _pct(field.x, W), _pct(field.y, H));
     } else {
-      // left align (default)
       _ctx.textAlign = 'left';
       _ctx.fillText(text, _pct(field.x, W), _pct(field.y, H));
     }
     _ctx.restore();
   }
 
+  // Helper to resolve typing certificate data from identifier or object
+  function _resolveTypingData(dataOrId) {
+    if (typeof dataOrId === 'string') {
+      if (typeof window !== 'undefined' && window.StudentDB) {
+        const found = window.StudentDB.find(dataOrId);
+        if (found) {
+          return {
+            studentName:        found.studentName || found.applicantName || '',
+            fatherHusbandName:  found.fatherName || '',
+            motherName:         found.motherName || '',
+            enrollmentNumber:   found.enrollmentNo || found.rollNumber || '',
+            computerTyping:     found.computerTyping || '',
+            certificateNo:      found.certificateNumber || '',
+            dateOfIssue:        found.dateOfIssue || '',
+            sessionFrom:        found.sessionFrom || '',
+            sessionTo:          found.sessionTo || '',
+            grade:              found.grade || '',
+            studyCentre:        found.studyCentre || '',
+            wordsPerMinute:     found.wordsPerMinute || ''
+          };
+        }
+        console.warn('No student found with typing-cert lookup:', dataOrId);
+        return {};
+      }
+      console.warn('StudentDB not available, cannot auto-fill');
+      return {};
+    }
+    return dataOrId || {};
+  }
+
   // ─────────────────────────────────────────────
   // Load template image (REQUIRED - JPG template must exist)
   // ─────────────────────────────────────────────
   async function loadTemplate(path = CONFIG.templatePath, customConfig = null) {
-    if (!path) throw new Error('Template path required');
+    // Override templatePath if provided in customConfig
+    if (customConfig && customConfig.templatePath) {
+      CONFIG.templatePath = customConfig.templatePath;
+    }
+    // Use the path argument, or fall back to the (possibly updated) CONFIG value
+    const templatePath = path || CONFIG.templatePath;
+    if (!templatePath) throw new Error('Template path required');
 
     try {
       // Allow overriding field positions via customConfig
@@ -122,9 +163,9 @@ var TypingCertificateGenerator = (() => {
         CONFIG.fields = { ...CONFIG.fields, ...customConfig.fields };
       }
 
-      _templateImg = await _loadImage(path);
+      _templateImg = await _loadImage(templatePath);
       if (!_templateImg) {
-        throw new Error(`Template image not found at: ${path}. Please ensure the JPG template exists in the public folder.`);
+        throw new Error(`Template image not found at: ${templatePath}. Please ensure the JPG template exists in the public folder.`);
       }
 
       if (!_initCanvas()) throw new Error('Canvas not available');
@@ -141,7 +182,7 @@ var TypingCertificateGenerator = (() => {
   // ─────────────────────────────────────────────
   // Generate certificate data URL
   // ─────────────────────────────────────────────
-  async function getDataURL(student) {
+  async function getDataURL(studentOrId) {
     if (!_templateImg || !_ctx) {
       throw new Error('Template not loaded. Call loadTemplate() first.');
     }
@@ -150,7 +191,7 @@ var TypingCertificateGenerator = (() => {
     _ctx.clearRect(0, 0, _canvas.width, _canvas.height);
     _ctx.drawImage(_templateImg, 0, 0);
 
-    // student = { studentName, fatherHusbandName, motherName, enrollmentNumber, computerTyping, certificateNo, dateOfIssue }
+    const student = _resolveTypingData(studentOrId);
 
     _drawField(CONFIG.fields.studentName,        student.studentName);
     _drawField(CONFIG.fields.fatherHusbandName,  student.fatherHusbandName);
@@ -159,6 +200,11 @@ var TypingCertificateGenerator = (() => {
     _drawField(CONFIG.fields.computerTyping,     student.computerTyping);
     _drawField(CONFIG.fields.certificateNo,      student.certificateNo);
     _drawField(CONFIG.fields.dateOfIssue,        _fmtDate(student.dateOfIssue));
+    _drawField(CONFIG.fields.sessionFrom,        student.sessionFrom);
+    _drawField(CONFIG.fields.sessionTo,          student.sessionTo);
+    _drawField(CONFIG.fields.grade,              student.grade);
+    _drawField(CONFIG.fields.studyCentre,        student.studyCentre);
+    _drawField(CONFIG.fields.wordsPerMinute,     student.wordsPerMinute);
 
     return _canvas.toDataURL('image/jpeg', 0.95);
   }
@@ -166,8 +212,9 @@ var TypingCertificateGenerator = (() => {
   // ─────────────────────────────────────────────
   // Generate and download single certificate
   // ─────────────────────────────────────────────
-  async function download(student) {
-    const dataURL = await getDataURL(student);
+  async function download(studentOrId) {
+    const dataURL = await getDataURL(studentOrId);
+    const student = _resolveTypingData(studentOrId);
     const link = document.createElement('a');
     link.download = `typing_certificate_${student.certificateNo || 'unknown'}.jpg`;
     link.href = dataURL;
@@ -177,9 +224,9 @@ var TypingCertificateGenerator = (() => {
   // ─────────────────────────────────────────────
   // Get a Blob URL of the certificate (for <img> preview or custom handling)
   // ─────────────────────────────────────────────
-  async function preview(student) {
-    const dataURL = await getDataURL(student);
-    return dataURL; // It's already a data URL, can be used directly in <img src="">
+  async function preview(studentOrId) {
+    const dataURL = await getDataURL(studentOrId);
+    return dataURL;
   }
 
   // ─────────────────────────────────────────────
@@ -190,7 +237,6 @@ var TypingCertificateGenerator = (() => {
 
     for (const student of students) {
       await download(student);
-      // Small delay to prevent browser overload
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
@@ -218,17 +264,8 @@ var TypingCertificateGenerator = (() => {
   // Fetch config from API and apply
   // ─────────────────────────────────────────────
   async function fetchConfigFromAPI(apiBaseUrl = '/api/settings') {
-    try {
-      const response = await fetch(`${apiBaseUrl}/certificate-template`);
-      const data = await response.json();
-      if (data.success && data.data && data.data.typingCertificate) {
-        CONFIG.fields = { ...CONFIG.fields, ...data.data.typingCertificate };
-        console.log('Template config loaded from API:', CONFIG.fields);
-        return true;
-      }
-    } catch (err) {
-      console.warn('Failed to fetch template config from API:', err);
-    }
+    // API config not calibrated for this template — skip to avoid overriding correct positions
+    console.log('TypingCertificate: using built-in field positions (API config skipped)');
     return false;
   }
 
@@ -248,4 +285,5 @@ var TypingCertificateGenerator = (() => {
   };
 
 })();
-}
+
+window.TypingCertificateGenerator = TypingCertificateGenerator;

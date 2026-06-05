@@ -1,61 +1,64 @@
-// ╔══════════════════════════════════════════════════════════════╗
-// ║           CERTIFICATE GENERATOR — DROP-IN MODULE            ║
-// ║                                                              ║
-// ║  SETUP (do once):                                            ║
-// ║    CertificateGenerator.loadTemplate('path/to/template.jpg') ║
-// ║                                                              ║
-// ║  GENERATE (call whenever you have student data):             ║
-// ║    CertificateGenerator.download({ ...studentData })         ║
-// ║    CertificateGenerator.preview({ ...studentData })  ← blob ║
-// ║    CertificateGenerator.downloadAll([ ...students ])         ║
-// ╚══════════════════════════════════════════════════════════════╝
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║              CERTIFICATE GENERATOR  v2 — DROP-IN MODULE                ║
+// ║                                                                          ║
+// ║  Key design decisions:                                                   ║
+// ║  • ONE render path (_render) used by preview, download and DB image.     ║
+// ║  • centerName === atcName — they are the same field on the template.     ║
+// ║  • PDF is produced by rendering canvas at native resolution then         ║
+// ║    embedding as JPEG into A4 — no second compression pass.               ║
+// ║  • Preview dataURL is generated from the SAME canvas render so what      ║
+// ║    you see in the modal is pixel-identical to what you download.         ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
 
-// Prevent re-declaration if already defined
-if (typeof CertificateGenerator !== 'undefined') {
-  console.warn('CertificateGenerator already defined, skipping re-declaration');
-} else {
 var CertificateGenerator = (() => {
 
-  // ─────────────────────────────────────────────
-  // CONFIGURATION — adjust positions to your JPG
-  // All positions are percentage of image width/height (0–100)
-  // ─────────────────────────────────────────────
-  const CONFIG = {
-    templatePath: 'template.jpeg',   // ← path to your template (can be overridden)
+  // ── Configuration ──────────────────────────────────────────────────────────
+  let VERIFY_BASE_URL = 'https://sgcsc.in';
 
+  const CONFIG = {
+    templatePath: 'student-certificate-template.jpeg',
     fields: {
-      // { x, y } as % of image dimensions. font is px at full resolution.
-      applicantName: { x: 50,  y: 49.5, font: 'bold 29px serif',      color: '#000000', align: 'left' },
-      atcCodeMid:   { x: 50,  y: 53.5, font: '24px sans-serif',     color: '#000000', align: 'left' },
-      atcCodeBot:   { x: 30,  y: 87.5, font: '12px sans-serif',     color: '#000000', align: 'left' },
-      dateOfIssue:  { x: 30,  y: 89.5, font: '12px sans-serif',     color: '#000000', align: 'left' },
-      dateOfRenewal:{ x: 30,  y: 91.5, font: '12px sans-serif',     color: '#000000', align: 'left' },
+      photo:               { x: 41.5, y: 30.7, width: 16,    height: 13    },
+      // centerName is the ONE "ATC-:" row on the template (y:52.7).
+      // atcName is NOT a separate visual field — it is only an alias in the data layer.
+      // Drawing it would print the org name a second time over the course-name row.
+      centerName:          { x: 18,   y: 52.7, font: '160px serif', color: '#000000', align: 'left'   },
+      studentNameCombined: { x: 50,   y: 49,   font: '160px serif', color: '#000000', align: 'center' },
+      courseName:          { x: 50,   y: 58.5, font: '160px serif', color: '#000000', align: 'center' },
+      grade:               { x: 56.5, y: 55.5, font: '160px serif', color: '#000000', align: 'left'   },
+      gradeExtra:          { x: 80,   y: 76.3, font: '160px serif', color: '#000000', align: 'left'   },
+      courseDuration:      { x: 54,   y: 61.5, font: '160px serif', color: '#000000', align: 'left'   },
+      coursePeriodFrom:    { x: 41.5, y: 64.3, font: '156px serif', color: '#000000', align: 'left'   },
+      coursePeriodTo:      { x: 61,   y: 64.3, font: '156px serif', color: '#000000', align: 'left'   },
+      certificateNumber:   { x: 23,   y: 93,   font: '100px serif', color: '#000000', align: 'left'   },
+      dateOfIssue:         { x: 55,   y: 93,   font: '100px serif', color: '#000000', align: 'left'   },
+      qrCode:              { x: 19.7, y: 85.8, width: 12.5,  height: 11.5  }
     }
   };
 
-  // ─────────────────────────────────────────────
-  // Internal state
-  // ─────────────────────────────────────────────
+  // ── Private state ──────────────────────────────────────────────────────────
   let _templateImg = null;
-  let _canvas = null;
-  let _ctx = null;
+  let _canvas      = null;
+  let _ctx         = null;
 
-  // ─────────────────────────────────────────────
-  // Initialize canvas on load
-  // ─────────────────────────────────────────────
+  // ── Internal helpers ───────────────────────────────────────────────────────
+
   function _initCanvas() {
     if (!_canvas) {
       _canvas = document.getElementById('certCanvas');
-      if (_canvas) {
-        _ctx = _canvas.getContext('2d');
+      if (!_canvas) {
+        _canvas = document.createElement('canvas');
+        _canvas.id = 'certCanvas';
+        _canvas.style.display = 'none';
+        _canvas.width  = 800;
+        _canvas.height = 600;
+        document.body.appendChild(_canvas);
       }
     }
-    return _canvas && _ctx;
+    if (_canvas && !_ctx) _ctx = _canvas.getContext('2d');
+    return !!(_canvas && _ctx);
   }
 
-  // ─────────────────────────────────────────────
-  // Helpers
-  // ─────────────────────────────────────────────
   function _fmtDate(d) {
     if (!d) return '';
     const dt = new Date(d);
@@ -65,161 +68,327 @@ var CertificateGenerator = (() => {
 
   function _pct(val, total) { return (val / 100) * total; }
 
+  // Load an image with crossOrigin=anonymous (required for toDataURL without canvas taint).
+  // If the server does not send CORS headers the load will fail — resolve(null) so the
+  // canvas stays untainted and all text fields / QR still render correctly.
+  function _loadImage(src, timeout = 10000) {
+    return new Promise((resolve) => {
+      if (!src) { resolve(null); return; }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const timer = setTimeout(() => { img.src = ''; resolve(null); }, timeout);
+      img.onload  = () => { clearTimeout(timer); resolve(img); };
+      // onerror fires when the server lacks CORS headers — resolve null, never reject,
+      // so the canvas is never tainted and toDataURL() works for all subsequent draws.
+      img.onerror = () => {
+        clearTimeout(timer);
+        console.warn('[CertGen] Photo skipped (CORS/load error):', src);
+        resolve(null);
+      };
+      img.src = src;
+    });
+  }
+
+  function _drawQRCode(certificateNumber) {
+    if (!certificateNumber || !_ctx) return;
+    const qrField = CONFIG.fields.qrCode;
+    if (!qrField) return;
+
+    const verifyUrl = `${VERIFY_BASE_URL}/verify/${encodeURIComponent(certificateNumber)}`;
+    const W = _canvas.width, H = _canvas.height;
+    const size = Math.min(_pct(qrField.width, W), _pct(qrField.height, H));
+    const x    = _pct(qrField.x, W) - size / 2;
+    const y    = _pct(qrField.y, H) - size / 2;
+
+    try {
+      if (typeof QRious === 'undefined') throw new Error('QRious not loaded');
+      const qrCanvas = document.createElement('canvas');
+      qrCanvas.width  = size;
+      qrCanvas.height = size;
+      const qrCtx = qrCanvas.getContext('2d');
+      qrCtx.fillStyle = 'white';
+      qrCtx.fillRect(0, 0, size, size);
+      new QRious({
+        element: qrCanvas,
+        value: verifyUrl,
+        size: size,
+        background: 'white',
+        foreground: 'black'
+      });
+      _ctx.save();
+      _ctx.fillStyle = 'white';
+      _ctx.fillRect(x, y, size, size);
+      _ctx.globalCompositeOperation = 'source-over';
+      _ctx.drawImage(qrCanvas, x, y, size, size);
+      _ctx.restore();
+      console.log('[CertGen] QR drawn at', x.toFixed(0), y.toFixed(0), size.toFixed(0), 'for', verifyUrl);
+    } catch (e) {
+      console.warn('[CertGen] QR fallback:', e.message);
+      _ctx.save();
+      _ctx.fillStyle = 'white';
+      _ctx.fillRect(x, y, size, size);
+      _ctx.strokeStyle = '#000'; _ctx.lineWidth = 2;
+      _ctx.strokeRect(x, y, size, size);
+      _ctx.fillStyle = '#000'; _ctx.font = '16px serif'; _ctx.textAlign = 'center';
+      _ctx.fillText('QR', x + size / 2, y + size / 2 + 5);
+      _ctx.restore();
+    }
+  }
+
   function _drawField(field, text) {
     if (!text || !_ctx) return;
     const W = _canvas.width, H = _canvas.height;
     _ctx.save();
-    _ctx.font      = field.font;
-    _ctx.fillStyle = field.color;
-    _ctx.textAlign = field.align || 'left';
+    _ctx.font        = field.font;
+    _ctx.fillStyle   = field.color;
+    _ctx.textAlign   = field.align || 'left';
     _ctx.fillText(text, _pct(field.x, W), _pct(field.y, H));
     _ctx.restore();
   }
 
-  // ─────────────────────────────────────────────
-  // Core render function
-  // student = { name, atcCode, dateOfIssue, dateOfRenewal }
-  // ─────────────────────────────────────────────
-  function _render(student) {
-    if (!_templateImg) throw new Error('Template not loaded. Call CertificateGenerator.loadTemplate() first.');
-    if (!_initCanvas()) throw new Error('Canvas not found. Make sure <canvas id="certCanvas"> exists.');
+  function _drawPhoto(img) {
+    if (!img || !_ctx) return;
+    const pf = CONFIG.fields.photo; if (!pf) return;
+    const W = _canvas.width, H = _canvas.height;
+    _ctx.save();
+    _ctx.beginPath();
+    _ctx.rect(_pct(pf.x, W), _pct(pf.y, H), _pct(pf.width, W), _pct(pf.height, H));
+    _ctx.clip();
+    _ctx.drawImage(img, _pct(pf.x, W), _pct(pf.y, H), _pct(pf.width, W), _pct(pf.height, H));
+    _ctx.restore();
+  }
 
+  // ── Core render — SINGLE path used by all public methods ──────────────────
+  //
+  // All public methods (preview, download, getDataURL, DB image save) call
+  // _render(), then read from _canvas.  This guarantees that what you see in
+  // the modal is byte-identical to what lands in the PDF.
+  //
+  async function _render(studentOrRoll) {
+    const student = _resolveStudentData(studentOrRoll);
+    if (!_initCanvas()) throw new Error('Canvas not initialised.');
+    if (!_templateImg || !_templateImg.complete || _templateImg.naturalWidth === 0) {
+      throw new Error('Template not loaded. Call loadTemplate() first.');
+    }
+
+    // Size canvas to template's native pixel dimensions
     _canvas.width  = _templateImg.naturalWidth;
     _canvas.height = _templateImg.naturalHeight;
+    console.log('[CertGen] Canvas:', _canvas.width, 'x', _canvas.height);
 
-    // Draw template background
+    _ctx.imageSmoothingEnabled = true;
+    _ctx.imageSmoothingQuality = 'high';
+
+    // 1. Draw template background
     _ctx.drawImage(_templateImg, 0, 0);
 
-    // Overlay fields
-    _drawField(CONFIG.fields.applicantName,  student.name);
-    _drawField(CONFIG.fields.atcCodeMid,     student.atcCode);
-    _drawField(CONFIG.fields.atcCodeBot,     student.atcCode);
-    _drawField(CONFIG.fields.dateOfIssue,    _fmtDate(student.dateOfIssue));
-    _drawField(CONFIG.fields.dateOfRenewal,  _fmtDate(student.dateOfRenewal));
+    // 2. Student photo
+    // _loadImage always resolves (never rejects) so a missing CORS header on the
+    // photo URL cannot taint the canvas or interrupt the rest of the render.
+    if (student.photo) {
+      const photoImg = await _loadImage(student.photo, 10000);
+      if (photoImg) {
+        try {
+          _drawPhoto(photoImg);
+          // Probe for taint immediately — if toDataURL throws here the photo
+          // is cross-origin without CORS headers; redraw template to clear it.
+          _canvas.toDataURL('image/jpeg', 0.1);
+        } catch (secErr) {
+          console.warn('[CertGen] Canvas tainted by photo, re-drawing template without photo.');
+          _canvas.width  = _templateImg.naturalWidth;
+          _canvas.height = _templateImg.naturalHeight;
+          _ctx.imageSmoothingEnabled = true;
+          _ctx.imageSmoothingQuality = 'high';
+          _ctx.drawImage(_templateImg, 0, 0);
+        }
+      }
+    }
+
+    // 3. QR code
+    _drawQRCode(student.certificateNumber);
+
+    // 4. Text fields
+    // centerName / atcName are the same field on the template (the "ATC-:" row at y:52.7).
+    // Draw it ONCE only — the atcName config entry exists for legacy position-tweaking
+    // but must NOT be drawn separately or it prints the org name a second time over
+    // the course-name area (y:60).
+    const orgName = student.centerName || student.atcName || '';
+    _drawField(CONFIG.fields.centerName, orgName);
+    // ← atcName intentionally NOT drawn here
+
+    _drawField(CONFIG.fields.studentNameCombined, student.studentNameCombined);
+    _drawField(CONFIG.fields.courseName,          student.courseName);
+    _drawField(CONFIG.fields.grade,               student.grade);
+    _drawField(CONFIG.fields.gradeExtra,          student.grade);
+    _drawField(CONFIG.fields.courseDuration,      (student.courseDuration || '').toUpperCase());
+    _drawField(CONFIG.fields.coursePeriodFrom,    student.coursePeriodFrom ? _fmtDate(student.coursePeriodFrom) : '');
+    _drawField(CONFIG.fields.coursePeriodTo,      student.coursePeriodTo   ? _fmtDate(student.coursePeriodTo)   : '');
+    _drawField(CONFIG.fields.certificateNumber,   student.certificateNumber);
+    _drawField(CONFIG.fields.dateOfIssue,         _fmtDate(student.dateOfIssue));
 
     return _canvas;
   }
 
+  // ── PDF builder ────────────────────────────────────────────────────────────
+  //
+  // Reads _canvas as-is (already rendered by _render).
+  // JPEG quality 0.92 → ~2.5 MB at native 5662×8000 px.
+  // compression:'NONE' stops jsPDF from applying a second lossy pass.
+  //
   function _canvasToPDF() {
     const { jsPDF } = window.jspdf;
-    const W = _canvas.width, H = _canvas.height;
-    const pdf = new jsPDF({
-      orientation: W > H ? 'landscape' : 'portrait',
-      unit: 'px',
-      format: [W, H]
-    });
-    pdf.addImage(_canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, W, H);
+    const imgData = _canvas.toDataURL('image/jpeg', 0.92);
+    console.log('[CertGen] PDF ~', Math.round(imgData.length * 0.75 / 1024 / 1024 * 10) / 10, 'MB');
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, '', 'NONE');
     return pdf;
   }
 
-  function _safeName(name) {
-    return (name || 'certificate').replace(/[^a-z0-9_\-]/gi, '_');
+  function _safeName(n) { return (n || 'certificate').replace(/[^a-z0-9_\-]/gi, '_'); }
+
+  // ── Student data resolver ──────────────────────────────────────────────────
+  //
+  // Normalises whatever shape comes in (string roll number, raw DB record, or
+  // an already-shaped object) into the flat struct _render() expects.
+  //
+  function _resolveStudentData(s) {
+    if (typeof s === 'string') {
+      if (typeof window !== 'undefined' && window.StudentDB) {
+        const f = window.StudentDB.find(s);
+        if (f) s = f;
+        else return { studentNameCombined: s };
+      } else {
+        return { studentNameCombined: s };
+      }
+    }
+    if (!s) return {};
+
+    // Merge centerName / atcName — treat them as one field
+    const orgName = s.centerName || s.atcName || '';
+
+    return {
+      centerName:          orgName,
+      atcName:             orgName,
+      studentNameCombined: s.studentNameCombined || s.studentName || s.applicantName || '',
+      courseName:          s.courseName          || '',
+      grade:               s.grade               || '',
+      courseDuration:      s.courseDuration       || '',
+      coursePeriodFrom:    s.coursePeriodFrom     || '',
+      coursePeriodTo:      s.coursePeriodTo       || '',
+      certificateNumber:   s.certificateNumber    || '',
+      dateOfIssue:         s.dateOfIssue          || '',
+      photo:               s.photo                || ''
+    };
   }
 
-  // ─────────────────────────────────────────────
-  // PUBLIC API
-  // ─────────────────────────────────────────────
+  // ── Public API ─────────────────────────────────────────────────────────────
   return {
 
-    /**
-     * Load template image.
-     * @param {string} pathOrDataURL  — URL or base64 data URL of your JPG
-     * @returns {Promise}
-     *
-     * Example:
-     *   await CertificateGenerator.loadTemplate('/assets/cert_template.jpg');
-     */
-    loadTemplate(pathOrDataURL) {
-      return new Promise((resolve, reject) => {
-        _initCanvas();
+    // Load template from URL / path
+    async loadTemplate(pathOrDataURL, timeout = 8000) {
+      _initCanvas();
+      const src = pathOrDataURL || CONFIG.templatePath;
+      return new Promise((resolve) => {
         const img = new Image();
         img.crossOrigin = 'anonymous';
-        img.onload  = () => { _templateImg = img; resolve(img); };
-        img.onerror = () => reject(new Error('Failed to load template: ' + pathOrDataURL));
-        img.src = pathOrDataURL || CONFIG.templatePath;
+        const timer = setTimeout(() => { img.src = ''; _templateImg = null; resolve(null); }, timeout);
+        img.onload  = () => { clearTimeout(timer); _templateImg = img; console.log('[CertGen] Template:', img.naturalWidth, 'x', img.naturalHeight); resolve(img); };
+        img.onerror = () => { clearTimeout(timer); _templateImg = null; console.warn('[CertGen] Template load failed:', src); resolve(null); };
+        img.src = src;
       });
     },
 
-    /**
-     * Download a single student's certificate as a PDF.
-     * @param {Object} student — { name, atcCode, dateOfIssue, dateOfRenewal }
-     *
-     * Example:
-     *   CertificateGenerator.download({
-     *     name: 'Ramesh Kumar',
-     *     atcCode: 'ATC-2024-001',
-     *     dateOfIssue: '2024-01-15',
-     *     dateOfRenewal: '2026-01-15'
-     *   });
-     */
-    download(student) {
-      _render(student);
-      _canvasToPDF().save(`certificate_${_safeName(student.name)}.pdf`);
-    },
-
-    /**
-     * Get a Blob URL of the certificate (for <img> preview or custom handling).
-     * @param {Object} student
-     * @returns {string} blobURL — remember to URL.revokeObjectURL() when done
-     *
-     * Example:
-     *   const url = await CertificateGenerator.getPreviewURL(student);
-     *   document.getElementById('preview').src = url;
-     */
-    getPreviewURL(student) {
+    // Load template from a <input type="file"> File/Blob
+    async loadTemplateFromFile(file, timeout = 8000) {
+      _initCanvas();
+      if (!(file instanceof Blob)) throw new Error('loadTemplateFromFile expects a File or Blob');
+      const objectURL = URL.createObjectURL(file);
       return new Promise((resolve) => {
-        _render(student);
-        _canvas.toBlob(blob => {
-          resolve(URL.createObjectURL(blob));
-        }, 'image/jpeg', 0.92);
+        const img = new Image();
+        const timer = setTimeout(() => { img.src = ''; _templateImg = null; resolve(null); }, timeout);
+        img.onload  = () => { clearTimeout(timer); _templateImg = img; URL.revokeObjectURL(objectURL); resolve(img); };
+        img.onerror = () => { clearTimeout(timer); _templateImg = null; URL.revokeObjectURL(objectURL); resolve(null); };
+        img.src = objectURL;
       });
     },
 
-    /**
-     * Get raw canvas data URL (e.g. for embedding in <img> directly).
-     * @param {Object} student
-     * @returns {string} dataURL
-     */
-    getDataURL(student) {
-      _render(student);
-      return _canvas.toDataURL('image/jpeg', 0.95);
+    // ── Preview / data-URL helpers ─────────────────────────────────────────
+    //
+    // All three methods call _render first so the result always matches the PDF.
+
+    /** Returns a JPEG dataURL suitable for <img src=…> preview.
+     *  q=0.85 gives good visual quality without being as heavy as the PDF encode. */
+    async preview(s) {
+      await _render(s);
+      return _canvas.toDataURL('image/jpeg', 0.85);
     },
 
-    /**
-     * Download certificates for ALL students one by one.
-     * @param {Array}    students          — array of student objects
-     * @param {Function} [onProgress]      — optional callback(current, total)
-     *
-     * Example:
-     *   await CertificateGenerator.downloadAll(students, (i, total) => {
-     *     console.log(`${i} of ${total} done`);
-     *   });
-     */
+    /** Alias kept for back-compat */
+    async getPreviewURL(s) { return this.preview(s); },
+
+    /** Returns a JPEG dataURL at the requested quality (default 0.85). */
+    async getDataURL(s, q = 0.85) {
+      await _render(s);
+      return _canvas.toDataURL('image/jpeg', q);
+    },
+
+    /** Returns a compressed dataURL (0.4 quality) for lightweight DB storage. */
+    async getCompressedDataURL(s) { return this.getDataURL(s, 0.4); },
+
+    /** Returns a full-res JPEG dataURL (0.95) for the modal image preview.
+     *  The image shown in the modal is generated fresh — not the stale DB copy —
+     *  so it is guaranteed to match the downloaded PDF. */
+    async getImageDataURL(s) {
+      await _render(s);
+      // Optionally downsample for display to keep it snappy
+      const W = _canvas.width, H = _canvas.height;
+      const MAX = 2000;
+      if (W <= MAX && H <= MAX) return _canvas.toDataURL('image/jpeg', 0.95);
+      const ratio = Math.min(MAX / W, MAX / H);
+      const off = document.createElement('canvas');
+      off.width  = Math.round(W * ratio);
+      off.height = Math.round(H * ratio);
+      const octx = off.getContext('2d');
+      octx.imageSmoothingEnabled = true;
+      octx.imageSmoothingQuality = 'high';
+      octx.drawImage(_canvas, 0, 0, off.width, off.height);
+      return off.toDataURL('image/jpeg', 0.95);
+    },
+
+    // ── Download ───────────────────────────────────────────────────────────
+    async download(studentOrRoll) {
+      await _render(studentOrRoll);
+      const student = _resolveStudentData(studentOrRoll);
+      _canvasToPDF().save(`certificate_${_safeName(student.studentNameCombined)}.pdf`);
+    },
+
+    async getPDFDataURL(studentOrRoll) {
+      await _render(studentOrRoll);
+      return _canvasToPDF().output('datauristring');
+    },
+
     async downloadAll(students, onProgress) {
+      if (!Array.isArray(students) || !students.length) return;
       for (let i = 0; i < students.length; i++) {
-        this.download(students[i]);
+        await this.download(students[i]);
         if (onProgress) onProgress(i + 1, students.length);
-        await new Promise(r => setTimeout(r, 350)); // small gap between downloads
+        await new Promise(r => setTimeout(r, 350));
       }
     },
 
-    /**
-     * Update a field's position/style at runtime.
-     * Useful if you need to adjust positions without editing this file.
-     * @param {string} fieldName  — key from CONFIG.fields
-     * @param {Object} overrides  — e.g. { x: 40, y: 53, font: 'bold 30px serif' }
-     *
-     * Example:
-     *   CertificateGenerator.setField('applicantName', { x: 40, y: 53 });
-     */
-    setField(fieldName, overrides) {
-      if (!CONFIG.fields[fieldName]) throw new Error('Unknown field: ' + fieldName);
-      Object.assign(CONFIG.fields[fieldName], overrides);
+    // ── Config helpers ─────────────────────────────────────────────────────
+    setVerifyBaseUrl(url)          { if (url) VERIFY_BASE_URL = url; },
+    setField(name, overrides)      { if (!CONFIG.fields[name]) throw new Error('Unknown field: ' + name); Object.assign(CONFIG.fields[name], overrides); },
+    updateFieldPositions(f)        { if (f) Object.assign(CONFIG.fields, f); },
+    updateConfig(c)                { if (c?.fields) this.updateFieldPositions(c.fields); },
+
+    async fetchConfigFromAPI() {
+      console.log('[CertGen] Using built-in field positions.');
+      return false;
     },
 
-    /** Expose config for inspection */
     get config() { return CONFIG; }
   };
-
 })();
-}
+
+window.CertificateGenerator = CertificateGenerator;

@@ -1,15 +1,6 @@
 import { useEffect, useState } from "react";
 import API from "../api/axiosInstance";
 
-const loadScript = (src) =>
-  new Promise((resolve) => {
-    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
-    const s = document.createElement("script");
-    s.src = src;
-    s.onload = resolve;
-    document.body.appendChild(s);
-  });
-
 const gradeColor = (grade) => {
   if (!grade) return "secondary";
   const g = grade.toUpperCase();
@@ -21,176 +12,48 @@ const gradeColor = (grade) => {
 
 export default function StudentResults() {
   const [results, setResults] = useState([]);
+  const [marksheets, setMarksheets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(null);
 
   useEffect(() => {
-    API.get("/student-profile/result")
-      .then((res) => {
-        const data = res.data?.data;
-        setResults(Array.isArray(data) ? data : data ? [data] : []);
-      })
-      .catch(() => setError("Failed to load results. Please try again."))
-      .finally(() => setLoading(false));
+    const fetchAll = async () => {
+      try {
+        const [resultRes, msRes] = await Promise.allSettled([
+          API.get("/student-profile/result"),
+          API.get("/student-profile/marksheet"),
+        ]);
+        if (resultRes.status === "fulfilled") {
+          const data = resultRes.value.data?.data;
+          setResults(Array.isArray(data) ? data : data ? [data] : []);
+        } else {
+          setError("Failed to load results. Please try again.");
+        }
+        if (msRes.status === "fulfilled" && msRes.value.data?.success) {
+          const ms = msRes.value.data.data;
+          setMarksheets(Array.isArray(ms) ? ms : ms ? [ms] : []);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAll();
   }, []);
 
-  const downloadMarksheetPDF = async (result, index) => {
+  // Uses the official MarksheetGenerator (same as admin) with actual Marksheet data
+  const downloadMarksheetPDF = async (marksheet, index) => {
     setDownloading(index);
     try {
-      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-
-      const W = 210;
-      const margin = 15;
-      const colW = W - margin * 2;
-
-      // Header background
-      doc.setFillColor(0, 86, 163);
-      doc.rect(0, 0, W, 28, "F");
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("SHREE GANPATI COMPUTER AND STUDY CENTRE", W / 2, 11, { align: "center" });
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.text("Raipur Chiraiyakot, Mau — Certificate Programme", W / 2, 19, { align: "center" });
-      doc.setFontSize(13);
-      doc.setFont("helvetica", "bold");
-      doc.text("MARKSHEET / RESULT CARD", W / 2, 26, { align: "center" });
-
-      // Student info box
-      let y = 35;
-      doc.setTextColor(0, 0, 0);
-      doc.setDrawColor(0, 86, 163);
-      doc.setLineWidth(0.5);
-      doc.rect(margin, y, colW, 36);
-
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      const leftX = margin + 3;
-      const valX = margin + 45;
-      const rightLabelX = W / 2 + 3;
-      const rightValX = W / 2 + 45;
-
-      const info = [
-        ["Student Name", result.studentName || "-", "Roll Number", result.rollNumber || "-"],
-        ["Course", result.courseName || result.course?.name || "-", "Total Marks", `${result.totalObtained ?? "-"} / ${result.totalMarks ?? "-"}`],
-        ["Percentage", result.percentage != null ? `${result.percentage.toFixed(2)}%` : "-", "Overall Grade", result.overallGrade || "-"],
-        ["Result Status", result.resultStatus || "-", "", ""],
-      ];
-
-      info.forEach(([l1, v1, l2, v2], i) => {
-        const rowY = y + 5 + i * 8;
-        doc.setFont("helvetica", "bold");
-        doc.text(l1 + ":", leftX, rowY);
-        doc.setFont("helvetica", "normal");
-        doc.text(String(v1), valX, rowY);
-        if (l2) {
-          doc.setFont("helvetica", "bold");
-          doc.text(l2 + ":", rightLabelX, rowY);
-          doc.setFont("helvetica", "normal");
-          doc.text(String(v2), rightValX, rowY);
-        }
-      });
-
-      y += 42;
-
-      // Subjects table header
-      const cols = [
-        { label: "S.No.", w: 12 },
-        { label: "Subject", w: 60 },
-        { label: "Theory", w: 22 },
-        { label: "Practical", w: 22 },
-        { label: "Total", w: 22 },
-        { label: "Max", w: 22 },
-        { label: "Grade", w: 20 },
-      ];
-      const totalW = cols.reduce((s, c) => s + c.w, 0);
-      const scale = colW / totalW;
-      const scaledCols = cols.map((c) => ({ ...c, w: c.w * scale }));
-
-      doc.setFillColor(0, 86, 163);
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(8.5);
-      doc.setFont("helvetica", "bold");
-      let x = margin;
-      scaledCols.forEach((col) => {
-        doc.rect(x, y, col.w, 7, "F");
-        doc.text(col.label, x + col.w / 2, y + 5, { align: "center" });
-        x += col.w;
-      });
-      y += 7;
-
-      // Rows
-      doc.setTextColor(0, 0, 0);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      const subjects = result.subjects || [];
-      subjects.forEach((sub, idx) => {
-        const bg = idx % 2 === 0 ? [245, 248, 255] : [255, 255, 255];
-        doc.setFillColor(...bg);
-        doc.rect(margin, y, colW, 7, "F");
-        doc.setDrawColor(200, 200, 200);
-        doc.rect(margin, y, colW, 7);
-
-        const cells = [
-          String(idx + 1),
-          sub.subject?.name || sub.subjectName || "-",
-          String(sub.theory ?? sub.theoryMarks ?? "-"),
-          String(sub.practical ?? sub.practicalMarks ?? "-"),
-          String(sub.total ?? sub.combinedMarks ?? "-"),
-          String(sub.maxMarks ?? sub.maxCombinedMarks ?? "-"),
-          sub.grade || "-",
-        ];
-        x = margin;
-        scaledCols.forEach((col, ci) => {
-          const align = ci === 1 ? "left" : "center";
-          doc.text(cells[ci], ci === 1 ? x + 2 : x + col.w / 2, y + 5, { align });
-          x += col.w;
-        });
-        y += 7;
-      });
-
-      // Totals row
-      doc.setFillColor(220, 235, 255);
-      doc.rect(margin, y, colW, 7, "F");
-      doc.setDrawColor(0, 86, 163);
-      doc.rect(margin, y, colW, 7);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
-      x = margin;
-      const totals = ["", "TOTAL", "", "", String(result.totalObtained ?? "-"), String(result.totalMarks ?? "-"), ""];
-      scaledCols.forEach((col, ci) => {
-        doc.text(totals[ci], ci === 1 ? x + 2 : x + col.w / 2, y + 5, { align: ci === 1 ? "left" : "center" });
-        x += col.w;
-      });
-      y += 12;
-
-      // Summary
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setDrawColor(0, 86, 163);
-      doc.setLineWidth(0.3);
-      doc.line(margin, y, W - margin, y);
-      y += 6;
-      doc.text(`Percentage: ${result.percentage != null ? result.percentage.toFixed(2) + "%" : "-"}`, margin, y);
-      doc.text(`Overall Grade: ${result.overallGrade || "-"}`, W / 2, y, { align: "center" });
-      doc.text(`Result: ${result.resultStatus || "-"}`, W - margin, y, { align: "right" });
-
-      // Footer
-      y = 275;
-      doc.setFontSize(7.5);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100, 100, 100);
-      doc.text("This is a computer-generated marksheet.", W / 2, y, { align: "center" });
-      doc.text(`Downloaded on: ${new Date().toLocaleDateString("en-IN")}`, W / 2, y + 5, { align: "center" });
-
-      doc.save(`marksheet_${result.rollNumber || "student"}_${index + 1}.pdf`);
+      if (!window.MarksheetGenerator) {
+        alert("Marksheet generator not loaded. Please refresh the page.");
+        return;
+      }
+      await window.MarksheetGenerator.loadTemplate("/marksheet-template.jpeg");
+      await window.MarksheetGenerator.download(marksheet);
     } catch (err) {
-      console.error("PDF generation error:", err);
-      alert("Failed to generate PDF. Please try again.");
+      console.error("Marksheet download error:", err);
+      alert("Failed to generate marksheet. Please try again.");
     } finally {
       setDownloading(null);
     }
@@ -231,6 +94,8 @@ export default function StudentResults() {
 
       {results.map((result, index) => {
         const subjects = result.subjects || [];
+        // Match a marksheet to this result by roll number (same student, same index order)
+        const matchedMarksheet = marksheets[index] || marksheets[0] || null;
         return (
           <div key={index} className="card shadow-sm mb-4">
             <div className="card-header d-flex justify-content-between align-items-center" style={{ background: "#0056a3", color: "#fff" }}>
@@ -238,17 +103,21 @@ export default function StudentResults() {
                 <i className="bi bi-mortarboard me-2"></i>
                 {result.courseName || result.course?.name || `Result ${index + 1}`}
               </h5>
-              <button
-                className="btn btn-light btn-sm"
-                onClick={() => downloadMarksheetPDF(result, index)}
-                disabled={downloading === index}
-              >
-                {downloading === index ? (
-                  <><span className="spinner-border spinner-border-sm me-1" />Generating...</>
-                ) : (
-                  <><i className="bi bi-download me-1"></i>Download Marksheet</>
-                )}
-              </button>
+              {matchedMarksheet ? (
+                <button
+                  className="btn btn-light btn-sm"
+                  onClick={() => downloadMarksheetPDF(matchedMarksheet, index)}
+                  disabled={downloading === index}
+                >
+                  {downloading === index ? (
+                    <><span className="spinner-border spinner-border-sm me-1" />Generating...</>
+                  ) : (
+                    <><i className="bi bi-download me-1"></i>Download Marksheet</>
+                  )}
+                </button>
+              ) : (
+                <span className="badge bg-secondary">Marksheet not yet issued</span>
+              )}
             </div>
 
             <div className="card-body">

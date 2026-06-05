@@ -1,4 +1,4 @@
-// ╔══════════════════════════════════════════════════════════════╗
+// ═══════════════════════════════════════════════════════════════╗
 // ║       FRANCHISE CERTIFICATE GENERATOR — DROP-IN MODULE      ║
 // ║                                                              ║
 // ║  SETUP (do once):                                            ║
@@ -14,10 +14,6 @@
 // ║    FranchiseCertificateGenerator.preview({ ...franchiseData }) ← blob ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-// Prevent re-declaration if already defined
-if (typeof FranchiseCertificateGenerator !== 'undefined') {
-  console.warn('FranchiseCertificateGenerator already defined, skipping re-declaration');
-} else {
 var FranchiseCertificateGenerator = (() => {
 
   // ─────────────────────────────────────────────
@@ -31,12 +27,12 @@ var FranchiseCertificateGenerator = (() => {
 
     fields: {
       // { x, y } as % of image dimensions. font is px at full resolution.
-      franchiseName:     { x: 50,  y: 45, font: 'bold 120px serif',      color: '#000000', align: 'center' },
-      address:           { x: 50,  y: 55, font: '100px serif',           color: '#000000', align: 'center' },
-      applicantName:     { x: 50,  y: 65, font: 'bold 100px serif',     color: '#000000', align: 'center' },
-      atcCode:           { x: 50,  y: 75, font: 'bold 80px serif',       color: '#000000', align: 'center' },
-      dateOfIssue:       { x: 35,  y: 85, font: '80px serif',           color: '#000000', align: 'left' },
-      dateOfRenewal:     { x: 65,  y: 85, font: '80px serif',           color: '#000000', align: 'left' },
+      trainingCentreName: { x: 50,  y: 44, font: '200px serif',           color: '#000000', align: 'center' },
+      applicantName:      { x: 46,  y: 49.7, font: '200px serif',        color: '#000000', align: 'left' },
+      atcCode:            { x: 46,  y: 53.3, font: '200px serif',        color: '#000000', align: 'left' },
+      atcCode2:           { x: 29,  y: 87.8, font: '130px serif',        color: '#000000', align: 'left' },
+      dateOfIssue:        { x: 29,  y: 89.6, font: '130px serif',        color: '#000000', align: 'left' },
+      dateOfRenewal:      { x: 29,  y: 91.5, font: '130px serif',        color: '#000000', align: 'left' },
     }
   };
 
@@ -53,10 +49,18 @@ var FranchiseCertificateGenerator = (() => {
   function _initCanvas() {
     if (!_canvas) {
       _canvas = document.getElementById('franchiseCertCanvas');
+      if (!_canvas) {
+        // Create a hidden canvas dynamically if not found
+        _canvas = document.createElement('canvas');
+        _canvas.id = 'franchiseCertCanvas';
+        _canvas.style.display = 'none';
+        document.body.appendChild(_canvas);
+      }
       if (_canvas) {
         _ctx = _canvas.getContext('2d');
       }
     }
+    console.log('Canvas initialized:', { canvas: !!_canvas, ctx: !!_ctx });
     return _canvas && _ctx;
   }
 
@@ -91,10 +95,9 @@ var FranchiseCertificateGenerator = (() => {
     if (!text || !_ctx) return;
     const W = _canvas.width, H = _canvas.height;
     _ctx.save();
-    _ctx.font      = field.font;
+    _ctx.font = field.font;
     _ctx.fillStyle = field.color;
 
-    // Handle text alignment: center text should be drawn at the center point
     if (field.align === 'center') {
       _ctx.textAlign = 'center';
       _ctx.fillText(text, _pct(field.x, W), _pct(field.y, H));
@@ -102,11 +105,35 @@ var FranchiseCertificateGenerator = (() => {
       _ctx.textAlign = 'right';
       _ctx.fillText(text, _pct(field.x, W), _pct(field.y, H));
     } else {
-      // left align (default)
       _ctx.textAlign = 'left';
       _ctx.fillText(text, _pct(field.x, W), _pct(field.y, H));
     }
     _ctx.restore();
+  }
+
+  // Helper to resolve franchise data from identifier or object
+  function _resolveFranchiseData(franchiseOrId) {
+    if (typeof franchiseOrId === 'string') {
+      if (typeof window !== 'undefined' && window.StudentDB) {
+        const found = window.StudentDB.find(franchiseOrId);
+        if (found) {
+          return {
+            trainingCentreName: found.trainingCentreName || found.instituteName || found.institutionName || '',
+            applicantName:      found.applicantName || found.studentName || '',
+            atcCode:            found.atcCode || '',
+            atcCode2:           found.atcCode2 || '',
+            dateOfIssue:        found.dateOfIssue || '',
+            dateOfRenewal:      found.dateOfRenewal || '',
+            certificateNumber:  found.certificateNumber || ''
+          };
+        }
+        console.warn('No franchise found with lookup:', franchiseOrId);
+        return {};
+      }
+      console.warn('StudentDB not available, cannot auto-fill');
+      return {};
+    }
+    return franchiseOrId || {};
   }
 
   // ─────────────────────────────────────────────
@@ -140,7 +167,7 @@ var FranchiseCertificateGenerator = (() => {
   // ─────────────────────────────────────────────
   // Generate certificate data URL
   // ─────────────────────────────────────────────
-  async function getDataURL(franchise) {
+  async function getDataURL(franchiseOrId) {
     if (!_templateImg || !_ctx) {
       throw new Error('Template not loaded. Call loadTemplate() first.');
     }
@@ -149,14 +176,14 @@ var FranchiseCertificateGenerator = (() => {
     _ctx.clearRect(0, 0, _canvas.width, _canvas.height);
     _ctx.drawImage(_templateImg, 0, 0);
 
-    // franchise = { franchiseName, address, applicantName, atcCode, dateOfIssue, dateOfRenewal }
+    const franchise = _resolveFranchiseData(franchiseOrId);
 
-    _drawField(CONFIG.fields.franchiseName,     franchise.franchiseName);
-    _drawField(CONFIG.fields.address,           franchise.address);
-    _drawField(CONFIG.fields.applicantName,     franchise.applicantName);
-    _drawField(CONFIG.fields.atcCode,           franchise.atcCode);
-    _drawField(CONFIG.fields.dateOfIssue,       _fmtDate(franchise.dateOfIssue));
-    _drawField(CONFIG.fields.dateOfRenewal,     _fmtDate(franchise.dateOfRenewal));
+    _drawField(CONFIG.fields.trainingCentreName, franchise.trainingCentreName);
+    _drawField(CONFIG.fields.applicantName,      franchise.applicantName);
+    _drawField(CONFIG.fields.atcCode,            franchise.atcCode);
+    _drawField(CONFIG.fields.atcCode2,           franchise.atcCode2);
+    _drawField(CONFIG.fields.dateOfIssue,        _fmtDate(franchise.dateOfIssue));
+    _drawField(CONFIG.fields.dateOfRenewal,      _fmtDate(franchise.dateOfRenewal));
 
     return _canvas.toDataURL('image/jpeg', 0.95);
   }
@@ -164,10 +191,11 @@ var FranchiseCertificateGenerator = (() => {
   // ─────────────────────────────────────────────
   // Generate and download single certificate
   // ─────────────────────────────────────────────
-  async function download(franchise) {
-    const dataURL = await getDataURL(franchise);
+  async function download(franchiseOrId) {
+    const dataURL = await getDataURL(franchiseOrId);
+    const franchise = _resolveFranchiseData(franchiseOrId);
     const link = document.createElement('a');
-    link.download = `franchise_certificate_${franchise.atcCode || 'unknown'}.jpg`;
+    link.download = `franchise_certificate_${franchise.certificateNumber || 'unknown'}.jpg`;
     link.href = dataURL;
     link.click();
   }
@@ -175,9 +203,9 @@ var FranchiseCertificateGenerator = (() => {
   // ─────────────────────────────────────────────
   // Get a Blob URL of the certificate (for <img> preview or custom handling)
   // ─────────────────────────────────────────────
-  async function preview(franchise) {
-    const dataURL = await getDataURL(franchise);
-    return dataURL; // It's already a data URL, can be used directly in <img src="">
+  async function preview(franchiseOrId) {
+    const dataURL = await getDataURL(franchiseOrId);
+    return dataURL;
   }
 
   // ─────────────────────────────────────────────
@@ -188,7 +216,6 @@ var FranchiseCertificateGenerator = (() => {
 
     for (const franchise of franchises) {
       await download(franchise);
-      // Small delay to prevent browser overload
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
@@ -216,17 +243,9 @@ var FranchiseCertificateGenerator = (() => {
   // Fetch config from API and apply
   // ─────────────────────────────────────────────
   async function fetchConfigFromAPI(apiBaseUrl = '/api/settings') {
-    try {
-      const response = await fetch(`${apiBaseUrl}/certificate-template`);
-      const data = await response.json();
-      if (data.success && data.data && data.data.franchiseCertificate) {
-        CONFIG.fields = { ...CONFIG.fields, ...data.data.franchiseCertificate };
-        console.log('Template config loaded from API:', CONFIG.fields);
-        return true;
-      }
-    } catch (err) {
-      console.warn('Failed to fetch template config from API:', err);
-    }
+    // API config is currently not calibrated for the franchise certificate template.
+    // Skip loading to avoid overriding correct hardcoded positions.
+    console.log('FranchiseCertificate: using built-in field positions (API config skipped)');
     return false;
   }
 
@@ -246,4 +265,5 @@ var FranchiseCertificateGenerator = (() => {
   };
 
 })();
-}
+
+window.FranchiseCertificateGenerator = FranchiseCertificateGenerator;
