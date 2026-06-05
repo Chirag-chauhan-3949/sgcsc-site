@@ -4,6 +4,20 @@ import { useLocation, useNavigate } from "react-router-dom";
 import API from "../api/axiosInstance";
 import { FranchiseLayout } from "./FranchiseStudents";
 
+function calculateDuration(fromDate, toDate) {
+  if (!fromDate || !toDate) return "";
+  const from = new Date(fromDate);
+  const to = new Date(toDate);
+  if (isNaN(from) || isNaN(to) || to < from) return "";
+  let years = to.getFullYear() - from.getFullYear();
+  let months = to.getMonth() - from.getMonth();
+  if (months < 0) { years--; months += 12; }
+  const parts = [];
+  if (years > 0) parts.push(`${years} year${years > 1 ? "s" : ""}`);
+  if (months > 0) parts.push(`${months} month${months > 1 ? "s" : ""}`);
+  return parts.join(" ") || "0 months";
+}
+
 export default function FranchiseCertificateCreate() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -19,10 +33,12 @@ export default function FranchiseCertificateCreate() {
   const [courseName, setCourseName] = useState("");
   const [sessionFrom, setSessionFrom] = useState("");
   const [sessionTo, setSessionTo] = useState("");
+  const [coursePeriodFrom, setCoursePeriodFrom] = useState("");
+  const [coursePeriodTo, setCoursePeriodTo] = useState("");
+  const [courseDuration, setCourseDuration] = useState("");
   const [grade, setGrade] = useState("");
   const [certificateNumber, setCertificateNumber] = useState("");
   const [issueDate, setIssueDate] = useState("");
-  const [courseDuration, setCourseDuration] = useState("");
   const [photo, setPhoto] = useState("");
 
   // State management
@@ -39,7 +55,12 @@ export default function FranchiseCertificateCreate() {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 20 }, (_, i) => currentYear - 10 + i);
 
-  // Fetch courses and franchise profile on mount
+  // Auto-calculate duration from period dates
+  useEffect(() => {
+    setCourseDuration(calculateDuration(coursePeriodFrom, coursePeriodTo));
+  }, [coursePeriodFrom, coursePeriodTo]);
+
+  // Fetch courses, profile, and students on mount
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -48,10 +69,8 @@ export default function FranchiseCertificateCreate() {
           API.get("/franchise-profile/me"),
           API.get("/franchise/students"),
         ]);
-        const data = Array.isArray(coursesRes.data) ? coursesRes.data : [];
-        setCourses(data);
+        setCourses(Array.isArray(coursesRes.data) ? coursesRes.data : []);
         setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : []);
-
         const profile = profileRes.data?.data || profileRes.data;
         if (profile?.instituteName) setFranchiseName(profile.instituteName);
       } catch (err) {
@@ -63,29 +82,27 @@ export default function FranchiseCertificateCreate() {
 
   // Load existing certificate for edit
   useEffect(() => {
-    if (!isEditMode || !certificateId) {
-      setLoading(false);
-      return;
-    }
-
+    if (!isEditMode || !certificateId) { setLoading(false); return; }
     const fetchCertificate = async () => {
       setLoading(true);
       try {
         const res = await API.get(`/franchise/certificates/${certificateId}`);
         const cert = res.data;
-
         if (cert) {
           setName(cert.name || "");
           setFatherName(cert.fatherName || "");
           setCourseName(cert.courseName || "");
           setSessionFrom(cert.sessionFrom ? String(cert.sessionFrom) : "");
           setSessionTo(cert.sessionTo ? String(cert.sessionTo) : "");
+          setCoursePeriodFrom(cert.coursePeriodFrom ? new Date(cert.coursePeriodFrom).toISOString().split("T")[0] : "");
+          setCoursePeriodTo(cert.coursePeriodTo ? new Date(cert.coursePeriodTo).toISOString().split("T")[0] : "");
           setGrade(cert.grade || "");
           setEnrollmentNumber(cert.enrollmentNumber || "");
           setCertificateNumber(cert.certificateNumber || "");
           setIssueDate(cert.issueDate ? cert.issueDate.split("T")[0] : "");
           setCourseDuration(cert.courseDuration || "");
           setPhoto(cert.photo || "");
+          if (cert.dob) setDob(new Date(cert.dob).toISOString().split("T")[0]);
         }
       } catch (err) {
         console.error("Failed to load certificate:", err);
@@ -95,15 +112,10 @@ export default function FranchiseCertificateCreate() {
         setLoading(false);
       }
     };
-
     fetchCertificate();
   }, [isEditMode, certificateId]);
 
-  const handleSelectStudent = (id) => {
-    if (!id) { setStudentId(""); return; }
-    const student = students.find((s) => (s._id || s.id) === id);
-    if (!student) return;
-    setStudentId(id);
+  const applyStudentFields = (student) => {
     setEnrollmentNumber(student.enrollmentNo || "");
     setName(student.name || "");
     setFatherName(student.fatherName || "");
@@ -114,44 +126,44 @@ export default function FranchiseCertificateCreate() {
     const sStart = student.sessionStart || c0?.sessionStart;
     const sEnd = student.sessionEnd || c0?.sessionEnd;
     if (cName) setCourseName(cName);
-    if (sStart) setSessionFrom(new Date(sStart).getFullYear().toString());
-    if (sEnd) setSessionTo(new Date(sEnd).getFullYear().toString());
+    if (sStart) {
+      setSessionFrom(new Date(sStart).getFullYear().toString());
+      setCoursePeriodFrom(new Date(sStart).toISOString().split("T")[0]);
+    }
+    if (sEnd) {
+      setSessionTo(new Date(sEnd).getFullYear().toString());
+      setCoursePeriodTo(new Date(sEnd).toISOString().split("T")[0]);
+    }
     setMessage("");
   };
 
-  // Lookup student by enrollment number — also captures photo URL for certificate
+  const handleSelectStudent = (id) => {
+    if (!id) { setStudentId(""); return; }
+    const student = students.find((s) => (s._id || s.id) === id);
+    if (!student) return;
+    setStudentId(id);
+    applyStudentFields(student);
+  };
+
   const handleLookupStudent = async () => {
     if (!enrollmentNumber.trim()) {
       setMessageType("danger");
       setMessage("Please enter an enrollment number first.");
       return;
     }
-
     setLoadingStudent(true);
     setMessage("");
-
     try {
       const studentsRes = await API.get("/franchise/students");
-      const students = Array.isArray(studentsRes.data) ? studentsRes.data : [];
-      const student = students.find(
+      const allStudents = Array.isArray(studentsRes.data) ? studentsRes.data : [];
+      const student = allStudents.find(
         (s) =>
           s.enrollmentNo === enrollmentNumber.trim() ||
           s.enrollment === enrollmentNumber.trim() ||
           s.rollNumber === enrollmentNumber.trim()
       );
-
       if (student) {
-        setName(student.name || "");
-        setFatherName(student.fatherName || "");
-        setCourseName(student.courseName || "");
-        setPhoto(student.photo || "");
-
-        const c0 = student.courses?.[0];
-        const sStart = student.sessionStart || c0?.sessionStart;
-        const sEnd = student.sessionEnd || c0?.sessionEnd;
-        if (sStart) setSessionFrom(new Date(sStart).getFullYear().toString());
-        if (sEnd) setSessionTo(new Date(sEnd).getFullYear().toString());
-
+        applyStudentFields(student);
         setMessageType("success");
         setMessage("Student details loaded successfully!");
       } else {
@@ -161,7 +173,7 @@ export default function FranchiseCertificateCreate() {
     } catch (err) {
       console.error("Student lookup error:", err);
       setMessageType("danger");
-      setMessage(err.userMessage || "Student not found with this enrollment number.");
+      setMessage("Student not found with this enrollment number.");
     } finally {
       setLoadingStudent(false);
     }
@@ -174,6 +186,8 @@ export default function FranchiseCertificateCreate() {
     if (!courseName.trim()) return showError("Course Name is required.");
     if (!sessionFrom) return showError("Session From is required.");
     if (!sessionTo) return showError("Session To is required.");
+    if (!coursePeriodFrom) return showError("Course Period From is required.");
+    if (!coursePeriodTo) return showError("Course Period To is required.");
     if (!grade.trim()) return showError("Grade is required.");
     if (!certificateNumber.trim()) return showError("Certificate Number is required.");
     if (!issueDate) return showError("Issue Date is required.");
@@ -189,7 +203,6 @@ export default function FranchiseCertificateCreate() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage("");
-
     if (!validate()) return;
 
     setSaving(true);
@@ -200,12 +213,14 @@ export default function FranchiseCertificateCreate() {
         courseName: courseName.trim(),
         sessionFrom: parseInt(sessionFrom),
         sessionTo: parseInt(sessionTo),
+        coursePeriodFrom,
+        coursePeriodTo,
+        courseDuration: courseDuration.trim(),
         grade: grade.trim(),
         enrollmentNumber: enrollmentNumber.trim(),
         certificateNumber: certificateNumber.trim(),
         issueDate,
         dob: dob || null,
-        courseDuration: courseDuration.trim(),
         photo: photo || "",
       };
 
@@ -216,20 +231,14 @@ export default function FranchiseCertificateCreate() {
       } else {
         await API.post("/franchise/certificates", payload);
         setMessageType("success");
-        setMessage("Certificate created successfully. You can now download it with the QR code from the certificates list.");
+        setMessage("Certificate created successfully. Download it from the certificates list.");
       }
 
-      setTimeout(() => {
-        navigate("/franchise/certificates");
-      }, 1500);
+      setTimeout(() => navigate("/franchise/certificates"), 1500);
     } catch (err) {
       console.error("create certificate error:", err);
       setMessageType("danger");
-      setMessage(
-        err.response?.data?.message ||
-          err.userMessage ||
-          "Failed to save certificate"
-      );
+      setMessage(err.response?.data?.message || "Failed to save certificate");
     } finally {
       setSaving(false);
     }
@@ -254,16 +263,10 @@ export default function FranchiseCertificateCreate() {
             {isEditMode ? "Edit Certificate" : "Create Certificate"}
           </h2>
           <small className="text-muted">
-            {isEditMode
-              ? "Update certificate details."
-              : "Creating a certificate will deduct credits from your account."}
+            {isEditMode ? "Update certificate details." : "Creating a certificate will deduct credits from your account."}
           </small>
         </div>
-        <button
-          className="btn btn-outline-secondary"
-          onClick={() => navigate("/franchise/certificates")}
-          disabled={saving}
-        >
+        <button className="btn btn-outline-secondary" onClick={() => navigate("/franchise/certificates")} disabled={saving}>
           Back to Certificates
         </button>
       </div>
@@ -274,15 +277,13 @@ export default function FranchiseCertificateCreate() {
         </div>
       )}
 
-      {message && (
-        <div className={`alert alert-${messageType}`} role="alert">
-          {message}
-        </div>
-      )}
+      {message && <div className={`alert alert-${messageType}`} role="alert">{message}</div>}
 
       <div className="card shadow-sm">
         <div className="card-body">
           <form onSubmit={handleSubmit} className="row g-3">
+
+            {/* Student dropdown */}
             {!isEditMode && (
               <div className="col-12">
                 <label className="form-label fw-semibold">Select Student</label>
@@ -308,8 +309,7 @@ export default function FranchiseCertificateCreate() {
             {/* Enrollment Number */}
             <div className="col-md-6">
               <label className="form-label">
-                Enrollment Number{" "}
-                {!isEditMode && <span className="text-danger">*</span>}
+                Enrollment Number {!isEditMode && <span className="text-danger">*</span>}
               </label>
               <div className="input-group">
                 <input
@@ -322,134 +322,78 @@ export default function FranchiseCertificateCreate() {
                   required={!isEditMode}
                 />
                 {!isEditMode && (
-                  <button
-                    type="button"
-                    className="btn btn-outline-primary"
-                    onClick={handleLookupStudent}
-                    disabled={loadingStudent}
-                  >
+                  <button type="button" className="btn btn-outline-primary" onClick={handleLookupStudent} disabled={loadingStudent}>
                     {loadingStudent ? "Looking up..." : "Lookup"}
                   </button>
                 )}
               </div>
-              <small className="text-muted">
-                Click Lookup to auto-fill student details and photo
-              </small>
+              <small className="text-muted">Click Lookup to auto-fill student details and photo</small>
             </div>
 
             {/* Date of Birth */}
             <div className="col-md-6">
               <label className="form-label">Date of Birth</label>
-              <input
-                type="date"
-                className="form-control"
-                value={dob}
-                onChange={(e) => setDob(e.target.value)}
-              />
+              <input type="date" className="form-control" value={dob} onChange={(e) => setDob(e.target.value)} />
               <small className="text-muted">Used for public verification</small>
             </div>
 
             <div className="col-md-6">
-              <label className="form-label">
-                Name <span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                className="form-control"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
+              <label className="form-label">Name <span className="text-danger">*</span></label>
+              <input type="text" className="form-control" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
 
             <div className="col-md-6">
-              <label className="form-label">
-                Father's Name <span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                className="form-control"
-                value={fatherName}
-                onChange={(e) => setFatherName(e.target.value)}
-                required
-              />
+              <label className="form-label">Father's Name <span className="text-danger">*</span></label>
+              <input type="text" className="form-control" value={fatherName} onChange={(e) => setFatherName(e.target.value)} required />
             </div>
 
             {/* Course Name */}
             <div className="col-md-6">
-              <label className="form-label">
-                Course Name <span className="text-danger">*</span>
-              </label>
-              <select
-                className="form-select"
-                value={courseName}
-                onChange={(e) => setCourseName(e.target.value)}
-                required
-              >
+              <label className="form-label">Course Name <span className="text-danger">*</span></label>
+              <select className="form-select" value={courseName} onChange={(e) => setCourseName(e.target.value)} required>
                 <option value="">Select Course</option>
                 {courses.map((course) => (
-                  <option key={course._id} value={course.title || course.name}>
-                    {course.title || course.name}
-                  </option>
+                  <option key={course._id} value={course.title || course.name}>{course.title || course.name}</option>
                 ))}
               </select>
             </div>
 
-            {/* Course Duration */}
+            <div className="col-md-3">
+              <label className="form-label">Session From <span className="text-danger">*</span></label>
+              <select className="form-select" value={sessionFrom} onChange={(e) => setSessionFrom(e.target.value)} required>
+                <option value="">Select Year</option>
+                {years.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+            </div>
+
+            <div className="col-md-3">
+              <label className="form-label">Session To <span className="text-danger">*</span></label>
+              <select className="form-select" value={sessionTo} onChange={(e) => setSessionTo(e.target.value)} required>
+                <option value="">Select Year</option>
+                {years.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+            </div>
+
+            {/* Course Period From / To */}
+            <div className="col-md-6">
+              <label className="form-label">Course Period From <span className="text-danger">*</span></label>
+              <input type="date" className="form-control" value={coursePeriodFrom} onChange={(e) => setCoursePeriodFrom(e.target.value)} required />
+            </div>
+
+            <div className="col-md-6">
+              <label className="form-label">Course Period To <span className="text-danger">*</span></label>
+              <input type="date" className="form-control" value={coursePeriodTo} onChange={(e) => setCoursePeriodTo(e.target.value)} required />
+            </div>
+
+            {/* Course Duration — auto-calculated */}
             <div className="col-md-6">
               <label className="form-label">Course Duration</label>
-              <input
-                type="text"
-                className="form-control"
-                value={courseDuration}
-                onChange={(e) => setCourseDuration(e.target.value)}
-                placeholder="e.g., 6 Months, 1 Year"
-              />
-              <small className="text-muted">Printed on the certificate</small>
-            </div>
-
-            <div className="col-md-3">
-              <label className="form-label">
-                Session From <span className="text-danger">*</span>
-              </label>
-              <select
-                className="form-select"
-                value={sessionFrom}
-                onChange={(e) => setSessionFrom(e.target.value)}
-                required
-              >
-                <option value="">Select Year</option>
-                {years.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-md-3">
-              <label className="form-label">
-                Session To <span className="text-danger">*</span>
-              </label>
-              <select
-                className="form-select"
-                value={sessionTo}
-                onChange={(e) => setSessionTo(e.target.value)}
-                required
-              >
-                <option value="">Select Year</option>
-                {years.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
+              <input type="text" className="form-control" value={courseDuration} readOnly placeholder="Auto-calculated from period dates" />
+              <small className="text-muted">Calculated from Course Period dates above</small>
             </div>
 
             <div className="col-md-6">
-              <label className="form-label">
-                Grade <span className="text-danger">*</span>
-              </label>
+              <label className="form-label">Grade <span className="text-danger">*</span></label>
               <input
                 type="text"
                 className="form-control"
@@ -461,45 +405,19 @@ export default function FranchiseCertificateCreate() {
             </div>
 
             <div className="col-md-6">
-              <label className="form-label">
-                Certificate Number <span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                className="form-control"
-                value={certificateNumber}
-                onChange={(e) => setCertificateNumber(e.target.value)}
-                required
-              />
-              <small className="text-muted">
-                Must be globally unique — used for QR code verification
-              </small>
+              <label className="form-label">Certificate Number <span className="text-danger">*</span></label>
+              <input type="text" className="form-control" value={certificateNumber} onChange={(e) => setCertificateNumber(e.target.value)} required />
+              <small className="text-muted">Must be globally unique — used for QR code verification</small>
             </div>
 
             <div className="col-md-6">
-              <label className="form-label">
-                Issue Date <span className="text-danger">*</span>
-              </label>
-              <input
-                type="date"
-                className="form-control"
-                value={issueDate}
-                onChange={(e) => setIssueDate(e.target.value)}
-                required
-              />
+              <label className="form-label">Issue Date <span className="text-danger">*</span></label>
+              <input type="date" className="form-control" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} required />
             </div>
 
             <div className="col-12">
-              <button
-                type="submit"
-                className="btn btn-primary w-100"
-                disabled={saving}
-              >
-                {saving
-                  ? "Saving…"
-                  : isEditMode
-                  ? "Update Certificate"
-                  : "Create Certificate"}
+              <button type="submit" className="btn btn-primary w-100" disabled={saving}>
+                {saving ? "Saving…" : isEditMode ? "Update Certificate" : "Create Certificate"}
               </button>
             </div>
           </form>
