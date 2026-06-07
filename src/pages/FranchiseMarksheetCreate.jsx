@@ -160,12 +160,27 @@ export default function FranchiseMarksheetCreate() {
     setRollNumber(stu.rollNumber || "");
     setEnrollmentNo(stu.enrollmentNo || stu.rollNumber || "");
     if (stu.dob) setDob(new Date(stu.dob).toISOString().split("T")[0]);
-    if (stu.sessionStart) setCoursePeriodFrom(new Date(stu.sessionStart).toISOString().split("T")[0]);
-    if (stu.sessionEnd) setCoursePeriodTo(new Date(stu.sessionEnd).toISOString().split("T")[0]);
+
+    // Prefer top-level session dates; fall back to first course's session dates
+    const firstCourse = stu.courses?.[0];
+    const periodFrom = stu.sessionStart || firstCourse?.sessionStart;
+    const periodTo = stu.sessionEnd || firstCourse?.sessionEnd;
+    if (periodFrom) setCoursePeriodFrom(new Date(periodFrom).toISOString().split("T")[0]);
+    if (periodTo) setCoursePeriodTo(new Date(periodTo).toISOString().split("T")[0]);
 
     if (stu.courseName) {
       setCourseName(stu.courseName);
       const matched = courses.find((c) => (c.name || c.title) === stu.courseName);
+      if (matched) {
+        const cid = toId(matched);
+        setCourseId(cid);
+        setCourseDuration(matched.duration || matched.readableDuration || "");
+        applySubjectsForCourse(cid);
+      }
+    } else if (firstCourse?.courseName) {
+      // If no top-level courseName but course array has one, use it
+      setCourseName(firstCourse.courseName);
+      const matched = courses.find((c) => (c.name || c.title) === firstCourse.courseName);
       if (matched) {
         const cid = toId(matched);
         setCourseId(cid);
@@ -189,6 +204,17 @@ export default function FranchiseMarksheetCreate() {
     if (c) {
       setCourseName(c.name || c.title || "");
       setCourseDuration(c.duration || c.readableDuration || "");
+    }
+    // If a student is selected, try to pull session dates for this course from the student's courses array
+    if (studentId) {
+      const stu = students.find((s) => toId(s) === studentId);
+      const matchedStudentCourse = stu?.courses?.find(
+        (sc) => toId(sc.course) === selId || sc.courseName === (c?.name || c?.title)
+      );
+      if (matchedStudentCourse?.sessionStart)
+        setCoursePeriodFrom(new Date(matchedStudentCourse.sessionStart).toISOString().split("T")[0]);
+      if (matchedStudentCourse?.sessionEnd)
+        setCoursePeriodTo(new Date(matchedStudentCourse.sessionEnd).toISOString().split("T")[0]);
     }
     applySubjectsForCourse(selId);
   };

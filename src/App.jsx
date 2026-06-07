@@ -35,6 +35,8 @@ import FranchiseAdmitCardCreate from "./pages/FranchiseAdmitCardCreate";
 import FranchiseAdmitCardList from "./pages/FranchiseAdmitCardList";
 import FranchiseMarksheetCreate from "./pages/FranchiseMarksheetCreate";
 import FranchiseMarksheetList from "./pages/FranchiseMarksheetList";
+import FranchiseFeeReceipt from "./pages/FranchiseFeeReceipt";
+import FranchiseReceiptManagement from "./pages/FranchiseReceiptManagement";
 import FranchiseProtectedRoute from "./components/FranchiseProtectedRoute";
 
 
@@ -412,6 +414,24 @@ export default function App() {
   element={
     <FranchiseProtectedRoute>
       <FranchiseMarksheetCreate />
+    </FranchiseProtectedRoute>
+  }
+/>
+
+<Route
+  path="/franchise/receipts/create"
+  element={
+    <FranchiseProtectedRoute>
+      <FranchiseFeeReceipt />
+    </FranchiseProtectedRoute>
+  }
+/>
+
+<Route
+  path="/franchise/receipts"
+  element={
+    <FranchiseProtectedRoute>
+      <FranchiseReceiptManagement />
     </FranchiseProtectedRoute>
   }
 />

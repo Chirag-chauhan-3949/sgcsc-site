@@ -261,6 +261,35 @@ export function FranchiseSidebar() {
           )}
         </li>
 
+        {/* Fee Receipts */}
+        <li className="nav-item mb-2">
+          <button
+            type="button"
+            className="btn btn-toggle w-100 text-start d-flex justify-content-between align-items-center text-dark"
+            onClick={() => toggleMenu("receipts")}
+          >
+            <span className="d-flex align-items-center gap-2">
+              <i className="bi bi-receipt"></i>
+              Fee Receipts
+            </span>
+            <i className={`bi ${openMenu === "receipts" ? "bi-chevron-down" : "bi-chevron-right"}`}></i>
+          </button>
+          {openMenu === "receipts" && (
+            <ul className="btn-toggle-nav list-unstyled ps-4 pt-2 pb-1">
+              <li className="mb-1">
+                <NavLink to="/franchise/receipts/create" className={subLinkClass}>
+                  Create Receipt
+                </NavLink>
+              </li>
+              <li className="mb-1">
+                <NavLink to="/franchise/receipts" end className={subLinkClass}>
+                  View Receipts
+                </NavLink>
+              </li>
+            </ul>
+          )}
+        </li>
+
         {/* My Credits */}
         <li className="nav-item mb-2">
           <NavLink to="/franchise/credits" className={mainLinkClass}>
