@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import API from "../api/axiosInstance";
 
 export default function StudentResultVerification() {
-  const [rollNumber, setRollNumber] = useState("");
+  const [enrollmentNo, setEnrollmentNo] = useState("");
+  const [dob, setDob] = useState("");
   const [results, setResults] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -42,11 +43,11 @@ export default function StudentResultVerification() {
     setPreviewUrls({});
     setLoading(true);
     try {
-      const res = await API.post("/public/result", { rollNumber });
+      const res = await API.post("/public/result", { enrollmentNo, dob });
       const data = res.data.data;
       setResults(Array.isArray(data) ? data : [data]);
     } catch {
-      setError("No result found. Please check your roll number.");
+      setError("No result found. Please check your enrollment number and date of birth.");
     } finally {
       setLoading(false);
     }
@@ -131,12 +132,22 @@ export default function StudentResultVerification() {
 
       <form onSubmit={handleSubmit} className="card p-4 mx-auto" style={{ maxWidth: 500 }}>
         <div className="mb-3">
-          <label className="form-label">Roll Number / Enrollment Number</label>
+          <label className="form-label">Enrollment Number</label>
           <input
             className="form-control"
-            placeholder="e.g. 124368 or SG124368"
-            value={rollNumber}
-            onChange={(e) => setRollNumber(e.target.value)}
+            placeholder="e.g. SG124368"
+            value={enrollmentNo}
+            onChange={(e) => setEnrollmentNo(e.target.value)}
+            required
+          />
+        </div>
+        <div className="mb-3">
+          <label className="form-label">Date of Birth</label>
+          <input
+            type="date"
+            className="form-control"
+            value={dob}
+            onChange={(e) => setDob(e.target.value)}
             required
           />
         </div>
