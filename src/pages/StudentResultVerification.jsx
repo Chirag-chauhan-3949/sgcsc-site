@@ -23,7 +23,7 @@ export default function StudentResultVerification() {
   const fetchMyResults = async () => {
     setLoadingMyResults(true);
     try {
-      const res = await API.get("/student-profile/result");
+      const res = await API.get("/student-profile/marksheet");
       if (res.data.success) {
         const data = res.data.data;
         setMyResults(Array.isArray(data) ? data : [data]);
