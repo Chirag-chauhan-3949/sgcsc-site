@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from "../api/axiosInstance";
+import { useFranchiseAuth } from "../context/FranchiseAuthContext";
 
 export default function FranchiseLogin() {
   const [identifier, setIdentifier] = useState('');
@@ -8,6 +9,7 @@ export default function FranchiseLogin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { login } = useFranchiseAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,18 +30,20 @@ export default function FranchiseLogin() {
 
       const data = res.data?.data ?? res.data;
       const token = data?.token;
-      const user = data?.user ?? data?.franchise;
 
-      if (token) {
-        localStorage.setItem('token', token);
-        localStorage.setItem('franchise_token', token);
-        localStorage.setItem('user_role', 'franchise');
+      if (!token) {
+        setError('Login failed. Please try again.');
+        return;
       }
-      if (user) localStorage.setItem('currentUser', JSON.stringify(user));
 
+      login(token, 'franchise');
       navigate('/franchise/dashboard');
     } catch (err) {
-      setError(err.userMessage || 'Login failed. Please try again.');
+      setError(
+        err.response?.data?.message ||
+        err.userMessage ||
+        'Login failed. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -49,8 +53,6 @@ export default function FranchiseLogin() {
     <div className="container my-5" style={{ maxWidth: 720 }}>
       <div className="card shadow-sm overflow-hidden">
         <div className="row g-0">
-
-          {/* RIGHT SIDE — FORM ONLY */}
           <div className="col-12">
             <div className="card-body p-4">
               <h3 className="text-center mb-4 fw-bold">Franchise Login</h3>
@@ -82,7 +84,6 @@ export default function FranchiseLogin() {
                   />
                 </div>
 
-                {/* FULL WIDTH SIGN IN BUTTON */}
                 <button
                   type="submit"
                   className="btn btn-primary w-100 py-2 mb-3"
@@ -91,7 +92,6 @@ export default function FranchiseLogin() {
                   {loading ? 'Signing in…' : 'Sign in'}
                 </button>
 
-                {/* CENTERED LINKS */}
                 <div className="text-center mt-3">
                   <a
                     className="text-primary text-decoration-underline"
@@ -99,16 +99,6 @@ export default function FranchiseLogin() {
                     onClick={() => navigate('/franchise-registration')}
                   >
                     Register as Franchise
-                  </a>
-
-                  <span className="mx-2 text-muted">|</span>
-
-                  <a
-                    className="text-primary text-decoration-underline"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => navigate('/franchise-forgot-password')}
-                  >
-                    Forgot password?
                   </a>
                 </div>
               </form>
@@ -121,7 +111,6 @@ export default function FranchiseLogin() {
               </div>
             </div>
           </div>
-
         </div>
       </div>
     </div>

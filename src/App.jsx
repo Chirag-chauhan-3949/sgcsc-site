@@ -38,6 +38,8 @@ import FranchiseMarksheetList from "./pages/FranchiseMarksheetList";
 import FranchiseFeeReceipt from "./pages/FranchiseFeeReceipt";
 import FranchiseReceiptManagement from "./pages/FranchiseReceiptManagement";
 import FranchiseProtectedRoute from "./components/FranchiseProtectedRoute";
+import FranchiseLogin from "./pages/FranchiseLogin";
+import { FranchiseAuthProvider } from "./context/FranchiseAuthContext";
 
 
 import StudentProtectedRoute from "./components/StudentProtectedRoute";
@@ -87,6 +89,7 @@ function ScrollToTop() {
 
 export default function App() {
   return (
+    <FranchiseAuthProvider>
     <Router>
       <div className="d-flex flex-column min-vh-100">
         <Navbar />
@@ -122,6 +125,7 @@ export default function App() {
               {/* <Route path="/student-signup" element={<StudentSignup />} /> */}
 
               <Route path="/login" element={<Login />} />
+              <Route path="/franchise-login" element={<FranchiseLogin />} />
 
               <Route
   path="/student/enrollment-verification"
@@ -453,5 +457,6 @@ export default function App() {
         <Footer />
       </div>
     </Router>
+    </FranchiseAuthProvider>
   );
 }

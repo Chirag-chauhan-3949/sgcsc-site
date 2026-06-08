@@ -4,6 +4,7 @@ import API from "../api/axiosInstance";
 export default function StudyCenterList() {
   const [centers, setCenters] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     API.get("/public/franchise")
@@ -11,7 +12,7 @@ export default function StudyCenterList() {
         setCenters(res.data?.data || []);
       })
       .catch(() => {
-        setCenters([]);
+        setError(true);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -24,7 +25,13 @@ export default function StudyCenterList() {
 
       {loading && <p className="text-center">Loading...</p>}
 
-      {!loading && centers.length === 0 && (
+      {!loading && error && (
+        <p className="text-center text-danger">
+          Failed to load study centers. Please try again later.
+        </p>
+      )}
+
+      {!loading && !error && centers.length === 0 && (
         <p className="text-center text-muted">
           No study centers available.
         </p>

@@ -69,6 +69,8 @@ export default function FranchiseRegistration() {
     hasReception: "",
     username: "",
     password: "",
+    confirmPassword: "",
+    utrNumber: "",
     captchaInput: "",
   });
 
@@ -88,6 +90,7 @@ export default function FranchiseRegistration() {
   const canvasRef = useRef(null);
 
   const [showPassword, setShowPassword] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
 
 
@@ -106,7 +109,7 @@ export default function FranchiseRegistration() {
       aadharBack: [100, 300],
       institutePhoto: [100, 300],
       ownerImage: [100, 300],
-      ownerSign: [0, 100],
+      ownerSign: [10, 100],
       panImage: [100, 300],
       certificateFile: [100, 500],
 
@@ -126,6 +129,11 @@ export default function FranchiseRegistration() {
 
     const handleSubmit = async (e) => {
       e.preventDefault();
+
+      if (formData.password !== formData.confirmPassword) {
+        alert("Passwords do not match");
+        return;
+      }
 
       if (formData.captchaInput.toUpperCase() !== captcha) {
         alert("Invalid captcha");
@@ -162,8 +170,7 @@ export default function FranchiseRegistration() {
         fd.append("panNumber", formData.panNumber);
         fd.append("centerSpace", formData.centerSpace);
         fd.append("hasReception", formData.hasReception);
-
-
+        fd.append("utrNumber", formData.utrNumber);
 
         // FILES
         if (files.aadharFront) fd.append("aadharFront", files.aadharFront);
@@ -176,8 +183,7 @@ export default function FranchiseRegistration() {
 
         await API.post("/franchises/public/register", fd);
 
-        alert("Franchise application submitted successfully!");
-        window.location.reload();
+        setSubmitted(true);
       } catch (err) {
         console.error("FRANCHISE SUBMIT ERROR:", err);
         alert(err.response?.data?.message || "Failed to submit form");
@@ -258,6 +264,19 @@ export default function FranchiseRegistration() {
 
 
 
+
+  if (submitted) {
+    return (
+      <div className="container my-5 text-center">
+        <div className="alert alert-success p-5">
+          <h4 className="fw-bold mb-3">Application Submitted Successfully!</h4>
+          <p className="mb-0">
+            Your franchise registration has been submitted. We will review it and contact you shortly.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container my-5">
@@ -352,7 +371,7 @@ export default function FranchiseRegistration() {
             { label: "Aadhar Front (100KB - 300KB)", name: "aadharFront" },
             { label: "Aadhar Back (100KB - 300KB)", name: "aadharBack" },
             { label: "Upload Institute Photo (100KB - 300KB)", name: "institutePhoto" },
-            { label: "Center Owner Sign (0KB - 100KB)", name: "ownerSign" },
+            { label: "Center Owner Sign (10KB - 100KB)", name: "ownerSign" },
             { label: "Upload Image of Franchise Owner (100KB - 300KB)", name: "ownerImage" },
             { label: "PAN Card Image (100KB - 300KB)", name: "panImage" },
             { label: "Certificate Image (100KB - 500KB)", name: "certificateFile" },
@@ -366,7 +385,7 @@ export default function FranchiseRegistration() {
                 name={item.name}
                 className="form-control"
                 onChange={handleFileChange}
-                // required
+                required
               />
             </div>
           ))}
@@ -628,6 +647,20 @@ export default function FranchiseRegistration() {
           </div>
         </div>
 
+        {/* Confirm Password */}
+        <div className="mb-3">
+          <label className="form-label fw-semibold">Confirm Password</label>
+          <input
+            type={showPassword ? "text" : "password"}
+            name="confirmPassword"
+            className="form-control"
+            placeholder="Re-enter Password"
+            value={formData.confirmPassword}
+            onChange={handleChange}
+            required
+          />
+        </div>
+
         {/* Payment Section */}
         <div className="mb-4 border rounded p-3 bg-white">
           <h5 className="fw-bold mb-2">Registration Fee Payment</h5>
@@ -653,6 +686,20 @@ export default function FranchiseRegistration() {
           </small>
         </div>
 
+        {/* UTR / Transaction ID */}
+        <div className="mb-3">
+          <label className="form-label fw-semibold">UPI Transaction ID / UTR Number</label>
+          <input
+            type="text"
+            name="utrNumber"
+            className="form-control"
+            placeholder="Enter UTR/Transaction ID after payment"
+            value={formData.utrNumber}
+            onChange={handleChange}
+            required
+          />
+          <small className="text-muted">Enter the UTR number from your UPI payment confirmation.</small>
+        </div>
 
         {/* Captcha */}
         <div className="mb-3">

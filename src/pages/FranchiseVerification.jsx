@@ -5,24 +5,39 @@ export default function FranchiseVerification() {
   const [instituteId, setInstituteId] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [inputError, setInputError] = useState("");
+  const [apiError, setApiError] = useState(false);
 
   const verify = async () => {
-    if (!instituteId.trim()) return;
+    if (!instituteId.trim()) {
+      setInputError("Please enter an Institute ID.");
+      return;
+    }
+    setInputError("");
 
     try {
       setLoading(true);
       setResult(null);
+      setApiError(false);
 
       const res = await API.get(
-        `/public/franchise/verify?instituteId=${instituteId}`
+        `/public/franchise/verify?instituteId=${encodeURIComponent(instituteId)}`
       );
 
       setResult(res.data);
-    } catch {
-      setResult({ verified: false });
+    } catch (err) {
+      if (err.response?.status === 404) {
+        setResult({ verified: false });
+      } else {
+        setApiError(true);
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") verify();
   };
 
   return (
@@ -30,15 +45,32 @@ export default function FranchiseVerification() {
       <h3 className="text-center mb-4">Franchise Verification</h3>
 
       <input
-        className="form-control mb-3"
+        className={`form-control mb-1 ${inputError ? "is-invalid" : ""}`}
         placeholder="Enter Institute ID"
         value={instituteId}
-        onChange={(e) => setInstituteId(e.target.value)}
+        onChange={(e) => {
+          setInstituteId(e.target.value);
+          setInputError("");
+        }}
+        onKeyDown={handleKeyDown}
       />
+      {inputError && (
+        <div className="invalid-feedback d-block mb-2">{inputError}</div>
+      )}
 
-      <button className="btn btn-primary w-100" onClick={verify}>
+      <button
+        className="btn btn-primary w-100 mt-2"
+        onClick={verify}
+        disabled={loading}
+      >
         {loading ? "Verifying..." : "Verify"}
       </button>
+
+      {apiError && (
+        <div className="alert alert-warning mt-4">
+          Could not connect to the server. Please try again later.
+        </div>
+      )}
 
       {result && (
         <div className="mt-4">
@@ -52,9 +84,7 @@ export default function FranchiseVerification() {
               </div>
             </div>
           ) : (
-            <div className="alert alert-danger">
-              Franchise not verified
-            </div>
+            <div className="alert alert-danger">Franchise not verified</div>
           )}
         </div>
       )}

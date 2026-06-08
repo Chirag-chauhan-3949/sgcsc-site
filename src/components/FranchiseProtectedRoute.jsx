@@ -5,7 +5,7 @@ export default function FranchiseProtectedRoute({ children }) {
   const role = localStorage.getItem("user_role");
 
   if (!token || role !== "franchise") {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/franchise-login" replace />;
   }
 
   return children;
