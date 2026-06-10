@@ -3,6 +3,7 @@ import API from "../api/axiosInstance";
 
 export default function CertificateVerification() {
   const [certNo, setCertNo] = useState("");
+  const [dob, setDob] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,10 +17,11 @@ export default function CertificateVerification() {
     setPreviewUrl(null);
     setLoading(true);
     try {
-      const num = certNo.trim();
+      const num = encodeURIComponent(certNo.trim());
+      const dobParam = encodeURIComponent(dob);
       // Try student certificate first
       try {
-        const res = await API.get(`/public/certificate/${num}`);
+        const res = await API.get(`/public/certificate/${num}?dob=${dobParam}`);
         if (res.data.success && res.data.data) {
           setResult({ ...res.data.data, certType: "student" });
           return;
@@ -27,13 +29,13 @@ export default function CertificateVerification() {
       } catch {}
       // Try typing certificate
       try {
-        const res = await API.get(`/public/typing-certificate/${num}`);
+        const res = await API.get(`/public/typing-certificate/${num}?dob=${dobParam}`);
         if (res.data.success && res.data.data) {
           setResult({ ...res.data.data, certType: "typing" });
           return;
         }
       } catch {}
-      setError("No certificate found with this number. Please check and try again.");
+      setError("No certificate found. Please check the certificate number and date of birth.");
     } finally {
       setLoading(false);
     }
@@ -141,6 +143,16 @@ export default function CertificateVerification() {
             placeholder="e.g. CERT-2024-001"
             value={certNo}
             onChange={(e) => setCertNo(e.target.value)}
+            required
+          />
+        </div>
+        <div className="mb-3">
+          <label className="form-label fw-semibold">Date of Birth</label>
+          <input
+            type="date"
+            className="form-control"
+            value={dob}
+            onChange={(e) => setDob(e.target.value)}
             required
           />
         </div>
