@@ -93,13 +93,13 @@ export default function FranchiseLogin() {
                 </button>
 
                 <div className="text-center mt-3">
-                  <a
-                    className="text-primary text-decoration-underline"
-                    style={{ cursor: 'pointer' }}
+                  <button
+                    type="button"
+                    className="btn btn-link p-0 text-primary text-decoration-underline"
                     onClick={() => navigate('/franchise-registration')}
                   >
                     Register as Franchise
-                  </a>
+                  </button>
                 </div>
               </form>
 
